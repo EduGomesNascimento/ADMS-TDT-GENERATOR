@@ -9,3 +9,6 @@ venv/
 backend/roundtrip_*.xlsx
 backend/final_check.xlsx
 backend/test_export.xlsx
+
+frontend/tsconfig.tsbuildinfo
+backend/uvicorn.log
