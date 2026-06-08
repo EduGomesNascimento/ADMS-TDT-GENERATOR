@@ -244,7 +244,7 @@ def _col(headers, *keywords):
 def parse_points_list(file_bytes: bytes) -> dict:
     """Lê a lista de pontos (.xlsx) -> {discrete:[...], analog:[...]}."""
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
-    out = {"discrete": [], "analog": [], "inputErrors": []}
+    out = {"discrete": [], "analog": [], "discrete_analog": [], "inputErrors": []}
     names = {n.lower(): n for n in wb.sheetnames}
 
     def find(*cands):
@@ -289,6 +289,26 @@ def parse_points_list(file_bytes: bytes) -> dict:
                 "aor": str(r[ci_aor]).strip() if ci_aor is not None and r[ci_aor] else None,
             })
 
+    # aba Digital-Analógico (A/D), ex.: TAP — mesmas colunas do analógico
+    sda = find("discretoanalogico", "discreto analogico", "digital-analogico",
+               "digitalanalogico", "a/d", "discreteanalog")
+    if sda:
+        ws = wb[sda]
+        rows = list(ws.iter_rows(values_only=True))
+        h = rows[0]
+        ci_sig = _col(h, "SIGLA"); ci_nome = _col(h, "NOME")
+        ci_esc = _col(h, "ESCALA"); ci_in = _col(h, "INDEX"); ci_aor = _col(h, "AOR")
+        for r in rows[1:]:
+            if not r or not r[ci_nome if ci_nome is not None else 1]:
+                continue
+            out["discrete_analog"].append({
+                "sigla": str(r[ci_sig]).strip() if ci_sig is not None and r[ci_sig] else "",
+                "nome": str(r[ci_nome]).strip(),
+                "escala": r[ci_esc] if ci_esc is not None else None,
+                "inCoord": r[ci_in] if ci_in is not None else None,
+                "aor": str(r[ci_aor]).strip() if ci_aor is not None and r[ci_aor] else None,
+            })
+
     # aba de erros do pré-processador (sinais rejeitados antes de chegar aqui)
     se = find("erros", "erro", "errors")
     if se:
@@ -312,10 +332,12 @@ def parse_points_list(file_bytes: bytes) -> dict:
 
 PROTOCOLS = {
     "dnp3": {"template": TEMPLATE_PATH, "index": SIGLA_INDEX_PATH,
-             "discrete": "DNP3_DiscreteSignals", "analog": "DNP3_AnalogSignals"},
+             "discrete": "DNP3_DiscreteSignals", "analog": "DNP3_AnalogSignals",
+             "discrete_analog": "DNP3_DiscreteAnalog"},
     "iec104": {"template": DATA / "reference_template_iec104.xlsx",
                "index": DATA / "sigla_index_iec104.json",
-               "discrete": "IEC104_DiscreteSignals", "analog": "IEC104_AnalogSignals"},
+               "discrete": "IEC104_DiscreteSignals", "analog": "IEC104_AnalogSignals",
+               "discrete_analog": "IEC104_DiscreteAnalog"},
 }
 
 
@@ -429,14 +451,18 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3"):
     index = json.loads(Path(proto["index"]).read_text(encoding="utf-8"))
     wb = openpyxl.load_workbook(proto["template"])
     report = {"discrete": {"matched": 0, "unmatched": []},
-              "analog": {"matched": 0, "unmatched": []}}
+              "analog": {"matched": 0, "unmatched": []},
+              "discrete_analog": {"matched": 0, "unmatched": []}}
     custom_seq = {}  # (alias, tag) -> contador
 
     plan = [("discrete", proto["discrete"], "DS"),
-            ("analog", proto["analog"], "AS")]
+            ("analog", proto["analog"], "AS"),
+            ("discrete_analog", proto.get("discrete_analog"), "DA")]
 
     for klass, sheet, tag in plan:
         items = parsed.get(klass, [])
+        if not items or not sheet or sheet not in wb.sheetnames or sheet not in index:
+            continue
         ws = wb[sheet]
         lab = _labels(ws)
         ncol = max(lab.values()) + 1 if lab else 0
@@ -484,7 +510,7 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3"):
                 row[idx_in] = it.get("inCoord") if it.get("inCoord") not in (None, "") else None
             if klass == "discrete" and idx_out is not None:
                 row[idx_out] = it.get("outCoord") if it.get("outCoord") not in (None, "") else None
-            if klass == "analog" and idx_scale is not None and it.get("escala") not in (None, ""):
+            if klass in ("analog", "discrete_analog") and idx_scale is not None and it.get("escala") not in (None, ""):
                 row[idx_scale] = it["escala"]
             if idx_aor is not None and it.get("aor"):
                 row[idx_aor] = f"{alias} {it['aor']}"
