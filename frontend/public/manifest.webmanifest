@@ -1,0 +1,12 @@
+{
+  "name": "Gerador de TDTs · ADMS",
+  "short_name": "TDT ADMS",
+  "description": "Gerador de TDTs (DNP3 / IEC104) para o ADMS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0f1e",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
