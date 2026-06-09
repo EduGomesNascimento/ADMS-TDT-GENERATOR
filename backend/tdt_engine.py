@@ -58,6 +58,17 @@ class Catalog:
         return None
 
 
+def _fit_table(ws, last_data_row):
+    """Estende (ou ajusta) o ref da Tabela do Excel da sheet para cobrir todas as
+    linhas escritas — senão a formatação (faixa banded) para no fim do template."""
+    end_row = max(HEADER_ROWS + 1, last_data_row)  # cabeçalho na linha 4, dados a partir da 5
+    for name in list(ws.tables.keys()):
+        tbl = ws.tables[name]
+        m = re.match(r"^([A-Z]+\d+):([A-Z]+)\d+$", str(tbl.ref))
+        if m:
+            tbl.ref = f"{m.group(1)}:{m.group(2)}{end_row}"
+
+
 def _subst(value, mapping):
     if not isinstance(value, str):
         return value
@@ -221,6 +232,8 @@ def generate_tdt(config: dict) -> bytes:
             for ci in range(ncol):
                 cell = ws.cell(row=excel_row, column=ci + 1, value=row_vals[ci])
                 cell._style = copy(styles[ci])
+
+        _fit_table(ws, HEADER_ROWS + len(items))
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -533,6 +546,8 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3"):
                 cell._style = copy(styles[c])
             out_row += 1
             report[klass]["matched"] += 1
+
+        _fit_table(ws, HEADER_ROWS + out_row)
 
     buf = io.BytesIO()
     wb.save(buf)
