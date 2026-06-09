@@ -459,6 +459,14 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3"):
             ("analog", proto["analog"], "AS"),
             ("discrete_analog", proto.get("discrete_analog"), "DA")]
 
+    # pré-limpa sheets de sinais que NÃO terão dados (remove linhas-fantasma do template)
+    written = {sheet for klass, sheet, _ in plan if parsed.get(klass) and sheet in index}
+    for _k, sh, _t in plan:
+        if sh and sh in wb.sheetnames and sh not in written:
+            ws0 = wb[sh]
+            if ws0.max_row > HEADER_ROWS:
+                ws0.delete_rows(HEADER_ROWS + 1, ws0.max_row - HEADER_ROWS)
+
     for klass, sheet, tag in plan:
         items = parsed.get(klass, [])
         if not items or not sheet or sheet not in wb.sheetnames or sheet not in index:
