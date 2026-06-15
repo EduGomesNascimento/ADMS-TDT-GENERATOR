@@ -10,6 +10,8 @@ backend/roundtrip_*.xlsx
 backend/final_check.xlsx
 backend/test_export.xlsx
 backend/_test_*.xlsx
+backend/data/*.bak.xlsx
+backend/data/*.prev.xlsx
 
 frontend/tsconfig.tsbuildinfo
 backend/uvicorn.log

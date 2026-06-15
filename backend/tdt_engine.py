@@ -254,6 +254,10 @@ def generate_tdt(config: dict, native: bool = True) -> bytes:
 
         _fit_table(ws, HEADER_ROWS + len(items))
 
+    # sem TAP → remove a sheet Discrete Analog (sheet vazia é rejeitada pelo ADMS)
+    if not selected.get("DNP3_DiscreteAnalog") and "DNP3_DiscreteAnalog" in wb.sheetnames:
+        del wb["DNP3_DiscreteAnalog"]
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -499,6 +503,11 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3", native: bool = 
             ws0 = wb[sh]
             if ws0.max_row > HEADER_ROWS:
                 ws0.delete_rows(HEADER_ROWS + 1, ws0.max_row - HEADER_ROWS)
+
+    # sem TAP → remove a sheet Discrete Analog inteira (sheet vazia é rejeitada pelo ADMS)
+    da_sheet = proto.get("discrete_analog")
+    if da_sheet and da_sheet not in written and da_sheet in wb.sheetnames:
+        del wb[da_sheet]
 
     for klass, sheet, tag in plan:
         items = parsed.get(klass, [])
