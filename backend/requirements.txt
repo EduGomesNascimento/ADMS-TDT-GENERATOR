@@ -2,3 +2,11 @@ fastapi>=0.115
 uvicorn[standard]>=0.34
 openpyxl>=3.1
 pydantic>=2.11
+python-multipart>=0.0.9
+# Re-save nativo via MS Excel (Windows) — exigido pelo ADMS ("save in MS Excel").
+# Sem isto, o arquivo gerado pelo openpyxl é recusado: "Invalid TDI file format".
+pywin32>=306; platform_system == "Windows"
+# AI providers (instale conforme necessário):
+# pip install google-generativeai   # Gemini Flash (grátis)
+# pip install groq                  # Groq / Llama (grátis)
+# pip install requests              # Ollama (local)

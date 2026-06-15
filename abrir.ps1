@@ -8,6 +8,15 @@ Write-Host "=== Gerador de TDTs - ADMS ===" -ForegroundColor Cyan
 Write-Host "Dependencias do backend..."
 python -m pip install -q -r (Join-Path $back "requirements.txt")
 
+# Excel e' obrigatorio: o ADMS so aceita arquivos salvos pelo MS Excel.
+$excelReg = $null
+try { $excelReg = Get-ItemProperty "Registry::HKEY_CLASSES_ROOT\Excel.Application\CurVer" -ErrorAction Stop } catch {}
+if (-not $excelReg) {
+  Write-Host "AVISO: MS Excel nao detectado nesta maquina." -ForegroundColor Yellow
+  Write-Host "       A TDT gerada pode ser RECUSADA pelo ADMS ('Invalid TDI file format')." -ForegroundColor Yellow
+  Write-Host "       Instale o MS Excel para a conversao para o formato oficial." -ForegroundColor Yellow
+}
+
 if (-not (Test-Path (Join-Path $back "data\catalog.json"))) {
   Write-Host "Gerando catalogo..."
   Push-Location $back; python build_catalog.py; Pop-Location

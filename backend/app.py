@@ -11,7 +11,9 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+import os
+
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -20,6 +22,8 @@ import io
 import tdt_engine
 from tdt_engine import (Catalog, generate_tdt, _subst, COMMAND_PRESETS,
                         parse_points_list, generate_tdt_from_list, build_import_report)
+import ai_mapper
+import probability_report
 
 app = FastAPI(title="ADMS TDT Generator", version="1.0")
 app.add_middleware(
@@ -213,7 +217,7 @@ async def import_preview(request: Request, protocol: str = "dnp3"):
         parsed = parse_points_list(data)
     except Exception as e:
         raise HTTPException(400, f"falha ao ler a lista: {e}")
-    _, report = generate_tdt_from_list(parsed, protocol)
+    _, report = generate_tdt_from_list(parsed, protocol, native=False)
     # amostra de nomes por alias
     all_items = parsed["discrete"] + parsed["analog"]
     aliases = sorted({(it["nome"].split("_")[0]) for it in all_items if it["nome"]})
@@ -268,6 +272,154 @@ async def import_report(request: Request, protocol: str = "dnp3"):
     )
 
 
+
+# ─── Raw import (lista não-padrão com IA) ────────────────────────────────────
+
+def _llm_cfg(provider: str, model: str, api_key: str) -> dict | None:
+    """Monta config LLM; retorna None se provider == 'none'."""
+    if provider in ('none', ''):
+        return None
+    env_map = {'gemini': 'GEMINI_API_KEY', 'groq': 'GROQ_API_KEY'}
+    key = api_key or os.environ.get(env_map.get(provider, ''), '')
+    if not key and provider != 'ollama':
+        return None
+    return {'provider': provider, 'model': model, 'api_key': key}
+
+
+@app.post("/api/raw/preview")
+async def raw_preview(
+    file: UploadFile = File(...),
+    model: str = Form("gemini-2.0-flash"),
+    provider: str = Form("gemini"),
+    api_key: str = Form(""),
+    alias: str = Form(""),
+    protocol: str = Form("dnp3"),
+):
+    """Parseia lista não-padrão e mapeia sinais com IA. Retorna JSON."""
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "arquivo vazio")
+    try:
+        raw_signals, detected_alias = ai_mapper.parse_raw_excel(data)
+    except Exception as e:
+        raise HTTPException(400, f"falha ao ler o arquivo: {e}")
+
+    eff_alias = alias.strip() or detected_alias
+    cfg = _llm_cfg(provider, model, api_key)
+
+    try:
+        mapped = ai_mapper.map_signals(raw_signals, protocol=protocol, llm_cfg=cfg)
+    except Exception as e:
+        raise HTTPException(500, f"falha no mapeamento: {e}")
+
+    def _stats(lst):
+        return {
+            'total': len(lst),
+            'alta':  sum(1 for m in lst if m.confidence_label == 'ALTA'),
+            'media': sum(1 for m in lst if m.confidence_label == 'MÉDIA'),
+            'baixa': sum(1 for m in lst if m.confidence_label == 'BAIXA'),
+            'sem':   sum(1 for m in lst if m.confidence_label == 'SEM'),
+        }
+
+    discrete = [m for m in mapped if m.signal_type != 'analog']
+    analog   = [m for m in mapped if m.signal_type == 'analog']
+
+    return {
+        'detectedAlias': detected_alias,
+        'alias': eff_alias,
+        'discrete': _stats(discrete),
+        'analog': _stats(analog),
+        'signals': [
+            {
+                'utrId': m.utr_id,
+                'description': m.description,
+                'dnp3Addr': m.dnp3_addr,
+                'signalType': m.signal_type,
+                'module': m.module,
+                'sigla': m.sigla,
+                'siglaDesc': m.sigla_desc,
+                'confidence': m.confidence,
+                'confidenceLabel': m.confidence_label,
+                'matchMethod': m.match_method,
+            }
+            for m in mapped
+        ],
+    }
+
+
+@app.post("/api/raw/report")
+async def raw_report(
+    file: UploadFile = File(...),
+    model: str = Form("gemini-2.0-flash"),
+    provider: str = Form("gemini"),
+    api_key: str = Form(""),
+    alias: str = Form(""),
+    protocol: str = Form("dnp3"),
+):
+    """Gera o arquivo de probabilidades .xlsx."""
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "arquivo vazio")
+    raw_signals, detected_alias = ai_mapper.parse_raw_excel(data)
+    eff_alias = alias.strip() or detected_alias
+    cfg = _llm_cfg(provider, model, api_key)
+    mapped = ai_mapper.map_signals(raw_signals, protocol=protocol, llm_cfg=cfg)
+    xlsx = probability_report.build_probability_xlsx(
+        mapped, alias=eff_alias, source_file=file.filename or '')
+    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M")
+    fname = f"Probabilidades_{eff_alias}_{stamp}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(xlsx),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@app.post("/api/raw/export")
+async def raw_export(
+    file: UploadFile = File(...),
+    model: str = Form("gemini-2.0-flash"),
+    provider: str = Form("gemini"),
+    api_key: str = Form(""),
+    alias: str = Form(""),
+    min_confidence: int = Form(60),
+    protocol: str = Form("dnp3"),
+):
+    """Gera a TDT .xlsx a partir da lista não-padrão mapeada."""
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "arquivo vazio")
+    raw_signals, detected_alias = ai_mapper.parse_raw_excel(data)
+    eff_alias = alias.strip() or detected_alias
+    if not eff_alias:
+        raise HTTPException(400, "alias da subestação não detectado — informe manualmente")
+    cfg = _llm_cfg(provider, model, api_key)
+    mapped = ai_mapper.map_signals(raw_signals, protocol=protocol, llm_cfg=cfg)
+    lista = ai_mapper.to_lista_resumida(mapped, eff_alias, min_confidence=min_confidence)
+    try:
+        xlsx, _ = generate_tdt_from_list(lista, protocol)
+    except Exception as e:
+        raise HTTPException(500, f"falha na geração da TDT: {e}")
+    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M")
+    fname = f"TDT_{eff_alias}_{protocol}_raw_{stamp}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(xlsx),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    try:
+        import excel_native
+        excel_ok = excel_native.excel_available()
+    except Exception:
+        excel_ok = False
+    return {
+        "status": "ok",
+        "excelNative": excel_ok,
+        "note": None if excel_ok else
+            "MS Excel/pywin32 ausente — a TDT pode ser recusada pelo ADMS "
+            "('Invalid TDI file format'). Instale o MS Excel nesta máquina.",
+    }

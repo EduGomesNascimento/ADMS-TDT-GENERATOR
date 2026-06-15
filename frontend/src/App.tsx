@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Zap, ArrowRight, ArrowLeft, Download, Loader2, FileSpreadsheet,
-  Cpu, Settings2, ListChecks, Eye, CircleAlert, Hash, Upload, Network,
+  Cpu, Settings2, ListChecks, Eye, CircleAlert, Hash, Upload, Network, Bot,
 } from "lucide-react";
 import clsx from "clsx";
 import { Stepper } from "./components/Stepper";
 import { SignalList, type CmdCfg } from "./components/SignalList";
 import { ImportPanel } from "./components/ImportPanel";
+import { RawImportPanel } from "./components/RawImportPanel";
 import {
   fetchCatalog, fetchDevice, fetchPreview, exportTdt,
   type DeviceTypeSummary, type DeviceDetail, type PreviewResult, type ExportConfig, type SignalSel,
@@ -22,7 +23,7 @@ const typeIcon: Record<string, JSX.Element> = {
 
 export default function App() {
   const [protocol, setProtocol] = useState<"" | "dnp3" | "iec104">("");
-  const [appMode, setAppMode] = useState<"wizard" | "import">("wizard");
+  const [appMode, setAppMode] = useState<"wizard" | "import" | "raw">("wizard");
   const [step, setStep] = useState(1);
   const [maxReached, setMaxReached] = useState(1);
   const [catalog, setCatalog] = useState<DeviceTypeSummary[]>([]);
@@ -48,12 +49,17 @@ export default function App() {
   const [cmdConfig, setCmdConfig] = useState<Record<string, CmdCfg>>({});
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [excelWarn, setExcelWarn] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCatalog()
       .then((c) => setCatalog(c.deviceTypes))
       .catch((e) => setError(e.message))
       .finally(() => setLoadingCat(false));
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((h) => { if (!h.excelNative) setExcelWarn(h.note || "MS Excel não detectado."); })
+      .catch(() => {});
   }, []);
 
   const kind = device?.paramKind || (device?.consolidated ? "transformer" : "standard");
@@ -227,8 +233,8 @@ export default function App() {
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               {[
-                { id: "dnp3", label: "DNP3", desc: "Assistente por equipamento + importação de lista de pontos." },
-                { id: "iec104", label: "IEC 60870-5-104", desc: "Importação de lista de pontos (TDT IEC104)." },
+                { id: "dnp3",   label: "DNP3",              desc: "Assistente por equipamento + importação de lista de pontos." },
+                { id: "iec104", label: "IEC 60870-5-104",   desc: "Importação de lista de pontos (TDT IEC104)." },
               ].map((p) => (
                 <button
                   key={p.id}
@@ -245,7 +251,31 @@ export default function App() {
                 </button>
               ))}
             </div>
+            {/* Lista não-padrão (IA) */}
+            <div className="mt-4 border-t border-slate-800 pt-4">
+              <button
+                onClick={() => { setProtocol("dnp3"); setAppMode("raw"); }}
+                className="flex w-full items-center gap-4 rounded-xl border border-slate-700/50 bg-slate-900/30 p-4 text-left transition hover:border-brand-600/40 hover:bg-slate-900"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-600/20 text-violet-300">
+                  <Bot size={20} />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-200">Lista não-padrão — Reconhecimento por IA</p>
+                  <p className="text-xs text-slate-400">
+                    Aceita qualquer planilha de UTR (sem formato específico). A IA mapeia os sinais para a base ADMS com score de confiança.
+                  </p>
+                </div>
+              </button>
+            </div>
           </section>
+        )}
+
+        {excelWarn && (
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+            <CircleAlert size={16} className="mt-0.5 shrink-0" />
+            <span>{excelWarn}</span>
+          </div>
         )}
 
         {protocol && error && (
@@ -259,6 +289,10 @@ export default function App() {
             protocol={protocol}
             onBack={() => (protocol === "iec104" ? setProtocol("") : setAppMode("wizard"))}
           />
+        )}
+
+        {protocol && appMode === "raw" && (
+          <RawImportPanel onBack={() => { setProtocol(""); setAppMode("wizard"); }} />
         )}
 
         {/* STEP 1 */}

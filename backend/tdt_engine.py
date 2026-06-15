@@ -22,6 +22,11 @@ from copy import copy
 from pathlib import Path
 import openpyxl
 
+try:
+    import excel_native
+except ImportError:  # pragma: no cover
+    excel_native = None
+
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 CATALOG_PATH = DATA / "catalog.json"
@@ -78,7 +83,20 @@ def _subst(value, mapping):
     return out
 
 
-def generate_tdt(config: dict) -> bytes:
+def _finalize(buf_bytes: bytes, native: bool) -> bytes:
+    """Pós-processa o .xlsx: se `native`, re-salva pelo MS Excel para o formato
+    canônico aceito pelo ADMS. Em caso de Excel indisponível, devolve os bytes
+    do openpyxl (a importação no ADMS pode falhar — o chamador é avisado)."""
+    if not native or excel_native is None:
+        return buf_bytes
+    try:
+        return excel_native.resave_native(buf_bytes, resize_tables=True)
+    except Exception:
+        # fallback silencioso: melhor entregar o arquivo openpyxl do que quebrar
+        return buf_bytes
+
+
+def generate_tdt(config: dict, native: bool = True) -> bytes:
     """
     config = {
       deviceTypeId, alias, module, device,
@@ -87,6 +105,7 @@ def generate_tdt(config: dict) -> bytes:
       coordStart?: {discrete:int, analog:int},
       signals: [ {sheet, suffix, inputCoord?, customId?} ... ]
     }
+    native=True → re-salva pelo MS Excel (formato aceito pelo ADMS).
     """
     cat = Catalog()
     dev = cat.device(config["deviceTypeId"])
@@ -238,7 +257,7 @@ def generate_tdt(config: dict) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    return buf.read()
+    return _finalize(buf.read(), native)
 
 
 # ===========================================================================
@@ -458,8 +477,9 @@ def build_import_report(parsed: dict, protocol: str = "dnp3") -> bytes:
     return buf.read()
 
 
-def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3"):
-    """Gera a TDT a partir da lista de pontos. Retorna (bytes, report)."""
+def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3", native: bool = True):
+    """Gera a TDT a partir da lista de pontos. Retorna (bytes, report).
+    native=True → re-salva pelo MS Excel (formato aceito pelo ADMS)."""
     proto = PROTOCOLS.get(protocol, PROTOCOLS["dnp3"])
     index = json.loads(Path(proto["index"]).read_text(encoding="utf-8"))
     wb = openpyxl.load_workbook(proto["template"])
@@ -552,7 +572,7 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3"):
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    return buf.read(), report
+    return _finalize(buf.read(), native), report
 
 
 if __name__ == "__main__":
