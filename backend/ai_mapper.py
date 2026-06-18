@@ -355,6 +355,63 @@ def _desc_match(description: str, sigla_flat: dict, sig_type: Optional[str] = No
             return sigla, 96
     return None
 
+
+# ─── Matcher determinístico por código ANSI + similaridade ───────────────────
+# Códigos ANSI/IEEE de função (50=sobrecorrente, 51=temporizada, 67=direcional,
+# 87=diferencial, 27=subtensão, 59=sobretensão, 79=religamento, 86=bloqueio,
+# 52=disjuntor, 89=seccionadora, etc.) — embutidos nas descrições das SIGLAs.
+_ANSI_RE = re.compile(r'(?<![0-9])([2-9][0-9])(?![0-9])')
+
+
+def _ansi_codes(text: str) -> set:
+    return set(_ANSI_RE.findall(_norm(text)))
+
+
+def _deterministic_index(sigla_flat: dict) -> dict:
+    """Pré-computa, por SIGLA, seus tokens e códigos ANSI (descrição + código)."""
+    out = {}
+    for sigla, info in sigla_flat.items():
+        toks = _desc_tokens(info['desc']) | _desc_tokens(sigla)
+        codes = _ansi_codes(info['desc']) | _ansi_codes(sigla)
+        out[sigla] = (toks, codes, info['type'])
+    return out
+
+
+def _fuzzy_match(sig, sigla_flat: dict, inv: dict, det: dict,
+                 sig_type: Optional[str], min_conf: int = 48) -> Optional[tuple[str, int]]:
+    """Match determinístico (reproduzível) por sobreposição de tokens da descrição
+    + concordância de código ANSI. Confiança limitada a 78 (MÉDIA/BAIXA): nunca
+    marca ALTA — esses ficam para token/semântico/descrição-exata."""
+    st = 'discrete' if sig_type == 'command' else sig_type
+    raw_tokens = _desc_tokens(sig.description) | _desc_tokens(sig.utr_id)
+    raw_codes = _ansi_codes(sig.description) | _ansi_codes(sig.utr_id)
+    if not raw_tokens:
+        return None
+    # candidatos: SIGLAs que compartilham ao menos 1 token
+    cand: dict = {}
+    for t in raw_tokens:
+        for sg in inv.get(t, ()):
+            if st and sigla_flat[sg]['type'] != st:
+                continue
+            cand[sg] = cand.get(sg, 0) + 1
+    if not cand:
+        return None
+    best, best_conf = None, 0
+    for sg, overlap in cand.items():
+        sg_tokens, sg_codes, _ = det[sg]
+        union = len(raw_tokens | sg_tokens) or 1
+        jac = overlap / union                      # Jaccard de tokens
+        code_match = len(raw_codes & sg_codes)
+        conf = jac * 58 + code_match * 20
+        if raw_codes and code_match == 0:
+            conf *= 0.45                            # raw tem código mas SIGLA não → penaliza
+        conf = int(min(78, conf))
+        if conf > best_conf or (conf == best_conf and best and len(sg) < len(best)):
+            best_conf, best = conf, sg
+    if best and best_conf >= min_conf:
+        return best, best_conf
+    return None
+
 # ─── Backend LLM ─────────────────────────────────────────────────────────────
 
 _BATCH_SIZE = 25
@@ -553,13 +610,16 @@ def map_signals(
     llm_cfg = {'provider': 'gemini'|'groq'|'ollama', 'model': ..., 'api_key': ...}
     """
     sigla_flat = _load_sigla_flat(protocol)
+    inv = _build_inverted(sigla_flat)        # token -> SIGLAs (reutilizado p/ fuzzy e LLM)
+    det = _deterministic_index(sigla_flat)   # SIGLA -> (tokens, códigos ANSI, tipo)
     heuristic: list[Optional[tuple[str, int, str]]] = []
     unmatched_idx: list[int] = []
 
+    # Camadas DETERMINÍSTICAS (reproduzíveis, sem LLM), da mais forte à mais fraca:
+    # 1) token (código ADMS embutido no nome) → 2) semântico (medições) →
+    # 3) descrição exata → 4) fuzzy (código ANSI + sobreposição de descrição).
     for i, sig in enumerate(raw_signals):
         st = sig.signal_type
-        # 1) token type-aware (mais específico) → 2) semântico (analógicos) →
-        # 3) descrição exata. Tudo respeitando o tipo do sinal.
         match = _token_match(sig.utr_id, sigla_flat, st)
         method = 'token'
         if not match:
@@ -568,6 +628,9 @@ def map_signals(
         if not match:
             match = _desc_match(sig.description, sigla_flat, st)
             method = 'desc'
+        if not match:
+            match = _fuzzy_match(sig, sigla_flat, inv, det, st)
+            method = 'fuzzy'
         if match:
             heuristic.append((match[0], match[1], method))
         else:
