@@ -1,0 +1,11 @@
+# ===========================================================================
+#  CHAVE DA IA (GROQ) — recomendado, gratis
+# ===========================================================================
+#  1. Pegue uma chave gratis (sem cartao) em:  https://console.groq.com/keys
+#  2. Apague o "#" e cole a SUA chave na linha abaixo (uma linha so):
+#
+# gsk_COLE_SUA_CHAVE_AQUI
+#
+#  A ferramenta le este arquivo automaticamente ao iniciar.
+#  (Tambem da pra colar a chave direto no painel "Lista nao-padrao - IA".)
+# ===========================================================================

@@ -275,12 +275,28 @@ async def import_report(request: Request, protocol: str = "dnp3"):
 
 # ─── Raw import (lista não-padrão com IA) ────────────────────────────────────
 
+def _key_from_file(provider: str) -> str:
+    """Lê a chave de um arquivo local (chave_groq.txt / chave_gemini.txt) na raiz
+    do projeto, se existir — para o usuário só colar a chave num .txt."""
+    fname = {'groq': 'chave_groq.txt', 'gemini': 'chave_gemini.txt'}.get(provider)
+    if not fname:
+        return ''
+    for base in (Path(__file__).resolve().parent.parent, Path(__file__).resolve().parent):
+        p = base / fname
+        if p.exists():
+            for line in p.read_text(encoding='utf-8', errors='ignore').splitlines():
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    return line
+    return ''
+
+
 def _llm_cfg(provider: str, model: str, api_key: str, base_url: str = "") -> dict | None:
     """Monta config LLM; retorna None se provider == 'none'."""
     if provider in ('none', ''):
         return None
     env_map = {'gemini': 'GEMINI_API_KEY', 'groq': 'GROQ_API_KEY'}
-    key = api_key or os.environ.get(env_map.get(provider, ''), '')
+    key = api_key or os.environ.get(env_map.get(provider, ''), '') or _key_from_file(provider)
     if not key and provider != 'ollama':
         return None
     cfg = {'provider': provider, 'model': model, 'api_key': key}

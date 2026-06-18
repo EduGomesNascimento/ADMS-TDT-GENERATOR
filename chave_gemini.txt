@@ -1,0 +1,11 @@
+# ===========================================================================
+#  CHAVE DA IA (GEMINI) — alternativa gratis
+# ===========================================================================
+#  1. Pegue uma chave gratis em:  https://aistudio.google.com/apikey
+#  2. Apague o "#" e cole a SUA chave na linha abaixo (uma linha so):
+#
+# COLE_SUA_CHAVE_GEMINI_AQUI
+#
+#  IMPORTANTE: use o modelo gemini-2.5-flash (o gemini-2.0-flash tem cota zero).
+#  A ferramenta le este arquivo automaticamente ao iniciar.
+# ===========================================================================
