@@ -150,6 +150,52 @@ def _find_header_above(grid, data_start: int, n_cols: int) -> dict:
     return _map_columns(grid[best_idx][:n_cols])
 
 
+_TIPO_MAP = {'A': 'analog', 'D': 'discrete', 'C': 'command',
+             'A/D': 'analog', 'AD': 'analog', 'D/A': 'analog'}
+
+
+def _extract_structured(grid, sheet_name: str) -> list[RawSignal]:
+    """Formato por COLUNAS (Módulo / Tipo A,D,C / Descrição / Index) — listas que
+    descrevem o ponto por texto, sem coluna de UTR-ID (ex.: padrão de modelagem)."""
+    hdr = None
+    cols: dict = {}
+    for r, row in enumerate(grid[:8]):
+        cells = [_norm(c) for c in row]
+        txt = ' '.join(cells)
+        if 'MODULO' in txt and 'TIPO' in txt and 'DESCRI' in txt:
+            hdr = r
+            for i, c in enumerate(cells):
+                if c == 'MODULO' and 'module' not in cols:
+                    cols['module'] = i
+                elif c == 'TIPO' and 'tipo' not in cols:
+                    cols['tipo'] = i
+                elif 'DESCRI' in c and 'desc' not in cols:
+                    cols['desc'] = i
+                elif re.search(r'\bINDEX\b', c) and 'dnp3' not in cols:
+                    cols['dnp3'] = i
+            break
+    if hdr is None or 'desc' not in cols or 'tipo' not in cols:
+        return []
+
+    out: list[RawSignal] = []
+    for r in range(hdr + 1, len(grid)):
+        row = grid[r]
+        def cell(key):
+            i = cols.get(key)
+            return row[i] if (i is not None and i < len(row)) else None
+        desc = cell('desc')
+        if not desc or not str(desc).strip():
+            continue
+        tipo = _norm(cell('tipo'))
+        sig_type = _TIPO_MAP.get(tipo, 'discrete')
+        module = str(cell('module') or '').strip()
+        dnp3 = _parse_dnp3(cell('dnp3'))
+        out.append(RawSignal(utr_id=f"{module}_{module}" if module else "",
+                             description=str(desc).strip(), dnp3_addr=dnp3,
+                             signal_type=sig_type, module=module, source_sheet=sheet_name))
+    return out
+
+
 def _extract_sheet(ws, sheet_name: str, default_type: Optional[str] = None) -> list[RawSignal]:
     grid = _scan_grid(ws)
     if not grid:
@@ -158,7 +204,8 @@ def _extract_sheet(ws, sheet_name: str, default_type: Optional[str] = None) -> l
 
     found = _find_utr_column(grid)
     if not found:
-        return []
+        # sem coluna de UTR-ID → tenta formato por colunas (Módulo/Tipo/Descrição)
+        return _extract_structured(grid, sheet_name)
     utr_col, data_start = found
 
     cols = _find_header_above(grid, data_start, n_cols)
@@ -328,6 +375,8 @@ def _token_match(utr_id: str, sigla_flat: dict, sig_type: Optional[str] = None) 
     for start in range(1, n):          # pula o 1º token (alias/módulo)
         for window in range(1, min(5, n - start + 1)):
             candidate = '_'.join(tokens[start:start + window])
+            if len(candidate) <= 1:        # rejeita SIGLA de 1 char (A/B/D/F) → falso positivo
+                continue
             info = sigla_flat.get(candidate)
             if not info:
                 continue
@@ -398,6 +447,8 @@ def _fuzzy_match(sig, sigla_flat: dict, inv: dict, det: dict,
         return None
     best, best_conf = None, 0
     for sg, overlap in cand.items():
+        if len(sg) <= 1:               # rejeita SIGLA de 1 char (falso positivo)
+            continue
         sg_tokens, sg_codes, _ = det[sg]
         union = len(raw_tokens | sg_tokens) or 1
         jac = overlap / union                      # Jaccard de tokens
