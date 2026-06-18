@@ -26,8 +26,22 @@ Abra o PowerShell e rode **uma** das opções abaixo conforme o seu PC:
 | qwen2.5:3b (PC fraco) | `ollama pull qwen2.5:3b` | ~4 GB | rápida | boa |
 | llama3.1:8b | `ollama pull llama3.1:8b` | ~8 GB | média | alta |
 
-> Este PC (15,7 GB RAM, i5-1334U, sem GPU dedicada) roda bem o **qwen2.5:7b**.
-> Em CPU, um lote de 40 sinais leva ~30-90 s. Para mais velocidade, use o `:3b`.
+## ⚠️ Realidade de desempenho (CPU sem GPU)
+
+Em PC **sem placa de vídeo dedicada** (como este: i5-1334U + Intel Iris Xe), a
+inferência local é **lenta** e os modelos pequenos são **imprecisos**. Medido na
+lista URA real:
+
+| Modelo | Velocidade (CPU) | Qualidade nos sinais difíceis |
+|--------|------------------|-------------------------------|
+| qwen2.5:3b | ~90 s / 8 sinais | ruim (1/8, com erros) |
+| qwen2.5:7b | ~2× mais lento | melhor, mas inviável p/ listas grandes |
+| **Groq (nuvem, grátis)** | **~7 s / 25 sinais** | **boa (~21/25)** |
+
+**Recomendação:** neste PC, use o **Groq** (nuvem, grátis e rápido) para listas
+reais. O LLM **local** só compensa para listas **pequenas**, uso **offline
+obrigatório**, ou em uma máquina **com GPU**. Sem LLM nenhum, as regras locais
+(token + semântico) já resolvem ~57% **na hora**.
 
 ## 3. Usar na ferramenta
 
