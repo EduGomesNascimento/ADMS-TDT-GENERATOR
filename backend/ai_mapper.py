@@ -694,7 +694,9 @@ def map_signals(
         for batch_i, orig_i in enumerate(unmatched_idx):
             if llm_res[batch_i]:
                 sigla, conf = llm_res[batch_i]
-                heuristic[orig_i] = (sigla, conf, 'llm')
+                # CONFIABILIDADE: LLM nunca marca ALTA — ele acerta a função mas
+                # chuta o vão (52-10 vs 52-2 real). Teto 85 (MÉDIA) → sempre revisar.
+                heuristic[orig_i] = (sigla, min(conf, 85), 'llm')
 
     mapped: list[MappedSignal] = []
     for sig, match in zip(raw_signals, heuristic):

@@ -261,7 +261,10 @@ export default function App() {
                   <Bot size={20} />
                 </div>
                 <div>
-                  <p className="font-semibold text-slate-200">Lista não-padrão — Reconhecimento por IA</p>
+                  <p className="font-semibold text-slate-200">
+                    Lista não-padrão — Reconhecimento por IA{" "}
+                    <span className="ml-1 rounded-full bg-amber-500/20 px-2 py-0.5 align-middle text-[11px] font-semibold text-amber-300">em teste</span>
+                  </p>
                   <p className="text-xs text-slate-400">
                     Aceita qualquer planilha de UTR (sem formato específico). A IA mapeia os sinais para a base ADMS com score de confiança.
                   </p>

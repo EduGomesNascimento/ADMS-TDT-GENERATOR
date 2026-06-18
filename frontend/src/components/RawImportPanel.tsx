@@ -165,6 +165,7 @@ export function RawImportPanel({ onBack }: Props) {
           <h2 className="flex items-center gap-2 text-lg font-semibold">
             <Bot size={20} className="text-brand-400" />
             Lista não-padrão — Reconhecimento por IA
+            <span className="ml-2 rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-300">em teste</span>
           </h2>
           <button onClick={onBack} className="btn-ghost text-sm">
             <ArrowLeft size={14} /> Voltar
