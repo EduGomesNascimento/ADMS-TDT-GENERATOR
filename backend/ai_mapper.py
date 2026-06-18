@@ -452,14 +452,17 @@ def _parse_llm_json(text: str, n: int) -> list[dict]:
 
 
 def _call_llm(prompt: str, cfg: dict) -> str:
-    provider = cfg.get('provider', 'gemini')
-    model    = cfg.get('model', 'gemini-2.0-flash')
+    provider = cfg.get('provider', 'groq')
+    model    = cfg.get('model', 'gemini-2.5-flash')
     api_key  = cfg.get('api_key', '')
 
     if provider == 'gemini':
-        import google.generativeai as genai  # type: ignore
-        genai.configure(api_key=api_key)
-        resp = genai.GenerativeModel(model).generate_content(prompt)
+        # SDK novo (google-genai). Aceita chaves "AQ." e modelos do free tier
+        # (gemini-2.5-flash / -flash-lite / 3.1-flash-lite). NÃO usar gemini-2.0-flash
+        # (cota zero em muitos projetos → 429).
+        from google import genai as google_genai  # type: ignore
+        client = google_genai.Client(api_key=api_key)
+        resp = client.models.generate_content(model=model, contents=prompt)
         return resp.text
 
     if provider == 'groq':

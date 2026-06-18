@@ -6,7 +6,7 @@ python-multipart>=0.0.9
 # Re-save nativo via MS Excel (Windows) — exigido pelo ADMS ("save in MS Excel").
 # Sem isto, o arquivo gerado pelo openpyxl é recusado: "Invalid TDI file format".
 pywin32>=306; platform_system == "Windows"
-# AI providers (instale conforme necessário):
-# pip install google-generativeai   # Gemini Flash (grátis)
-# pip install groq                  # Groq / Llama (grátis)
-# pip install requests              # Ollama (local)
+# AI providers GRÁTIS (instale conforme necessário):
+# pip install groq                  # Groq / Llama 3.3 70B (grátis, recomendado)
+# pip install google-genai          # Gemini 2.5 Flash (grátis; SDK novo)
+# pip install requests              # Ollama (local, offline)

@@ -292,8 +292,8 @@ def _llm_cfg(provider: str, model: str, api_key: str, base_url: str = "") -> dic
 @app.post("/api/raw/preview")
 async def raw_preview(
     file: UploadFile = File(...),
-    model: str = Form("gemini-2.0-flash"),
-    provider: str = Form("gemini"),
+    model: str = Form("llama-3.3-70b-versatile"),
+    provider: str = Form("groq"),
     api_key: str = Form(""),
     alias: str = Form(""),
     protocol: str = Form("dnp3"),
@@ -354,8 +354,8 @@ async def raw_preview(
 @app.post("/api/raw/report")
 async def raw_report(
     file: UploadFile = File(...),
-    model: str = Form("gemini-2.0-flash"),
-    provider: str = Form("gemini"),
+    model: str = Form("llama-3.3-70b-versatile"),
+    provider: str = Form("groq"),
     api_key: str = Form(""),
     alias: str = Form(""),
     protocol: str = Form("dnp3"),
@@ -383,8 +383,8 @@ async def raw_report(
 @app.post("/api/raw/export")
 async def raw_export(
     file: UploadFile = File(...),
-    model: str = Form("gemini-2.0-flash"),
-    provider: str = Form("gemini"),
+    model: str = Form("llama-3.3-70b-versatile"),
+    provider: str = Form("groq"),
     api_key: str = Form(""),
     alias: str = Form(""),
     min_confidence: int = Form(60),

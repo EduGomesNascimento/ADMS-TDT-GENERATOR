@@ -47,7 +47,7 @@ const CONF_BADGE: Record<string, string> = {
 
 const PROVIDERS = [
   { value: "groq",   label: "Groq / Llama 3.3 70B (grátis, recomendado)", model: "llama-3.3-70b-versatile", hint: "Rápido e preciso. Chave grátis em console.groq.com — env: GROQ_API_KEY" },
-  { value: "gemini", label: "Gemini 2.0 Flash (grátis)",     model: "gemini-2.0-flash",      hint: "Chave grátis em aistudio.google.com. Se der 429, a cota do projeto está esgotada — crie uma chave nova." },
+  { value: "gemini", label: "Gemini 2.5 Flash (grátis)",     model: "gemini-2.5-flash",      hint: "Grátis em aistudio.google.com (250K tokens/min, 20 req/dia). Para mais volume use gemini-3.1-flash-lite (500/dia). NÃO use gemini-2.0-flash (cota zero)." },
   { value: "ollama", label: "Ollama (local, grátis, offline)", model: "qwen2.5:7b",               hint: "100% offline mas LENTO sem GPU. Em PC sem placa de vídeo, prefira o Groq. Requer 'ollama pull qwen2.5:7b'." },
   { value: "none",   label: "Só heurística (sem IA)",         model: "",                        hint: "Sem IA — token + semântico (~57%). Instantâneo e offline." },
 ];
