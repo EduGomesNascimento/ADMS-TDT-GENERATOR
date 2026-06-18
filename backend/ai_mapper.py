@@ -65,15 +65,6 @@ def _is_utr_id(val) -> bool:
     return bool(_UTR_ID_PATTERN.match(str(val).strip()))
 
 
-def _find_header_row(ws, max_scan: int = 30) -> Optional[int]:
-    for r_idx, row in enumerate(ws.iter_rows(max_row=max_scan, values_only=True)):
-        cells = [str(c).strip() if c else '' for c in row]
-        text = ' '.join(cells).lower()
-        if (_MODULE_RE.search(text) or _UTR_ID_RE.search(text)) and _DNP3_RE.search(text):
-            return r_idx
-    return None
-
-
 def _map_columns(header_vals: list) -> dict:
     cols: dict = {}
     for idx, cell in enumerate(header_vals):
@@ -91,18 +82,6 @@ def _map_columns(header_vals: list) -> dict:
         if _DESC_RE.search(c) and 'desc' not in cols:
             cols['desc'] = idx
     return cols
-
-
-def _find_utr_col_heuristic(ws, data_start: int, max_cols: int = 20) -> Optional[int]:
-    """Detecta coluna com padrão UTR_ID contando ocorrências."""
-    counts: dict[int, int] = {}
-    for row in ws.iter_rows(min_row=data_start, max_row=data_start + 40, values_only=True):
-        for idx, cell in enumerate(row[:max_cols]):
-            if _is_utr_id(cell):
-                counts[idx] = counts.get(idx, 0) + 1
-    if counts:
-        return max(counts, key=counts.get)
-    return None
 
 
 def _parse_dnp3(raw) -> Optional[int]:
@@ -126,38 +105,81 @@ def _infer_type(desc: str, sheet_name: str) -> str:
     return 'discrete'
 
 
+def _scan_grid(ws, max_rows: int = 3000, max_cols: int = 30):
+    """Lê a grade da sheet (read_only-friendly) numa matriz de valores."""
+    grid = []
+    for r, row in enumerate(ws.iter_rows(values_only=True)):
+        if r >= max_rows:
+            break
+        grid.append(list(row[:max_cols]))
+    return grid
+
+
+def _find_utr_column(grid) -> Optional[tuple[int, int]]:
+    """Acha a coluna com mais valores no padrão UTR_ID. Dirige a extração
+    independentemente do cabeçalho. Retorna (col_idx, primeira_linha_de_dados)."""
+    counts: dict[int, int] = {}
+    first: dict[int, int] = {}
+    for r, row in enumerate(grid):
+        for c, cell in enumerate(row):
+            if _is_utr_id(cell):
+                counts[c] = counts.get(c, 0) + 1
+                first.setdefault(c, r)
+    if not counts:
+        return None
+    col = max(counts, key=counts.get)
+    if counts[col] < 2:
+        return None
+    return col, first[col]
+
+
+def _find_header_above(grid, data_start: int, n_cols: int) -> dict:
+    """Procura a linha de cabeçalho logo acima do 1º dado (mais rótulos de texto)
+    e mapeia as colunas module/desc/dnp3."""
+    best_idx, best_score = None, 0
+    for r in range(max(0, data_start - 1), -1, -1):
+        if data_start - r > 6:
+            break
+        labels = grid[r]
+        score = sum(1 for v in labels if isinstance(v, str) and len(v.strip()) > 2)
+        if score > best_score:
+            best_score, best_idx = score, r
+    if best_idx is None:
+        return {}
+    return _map_columns(grid[best_idx][:n_cols])
+
+
 def _extract_sheet(ws, sheet_name: str, default_type: Optional[str] = None) -> list[RawSignal]:
-    hdr_idx = _find_header_row(ws)
-    if hdr_idx is None:
+    grid = _scan_grid(ws)
+    if not grid:
         return []
+    n_cols = max((len(r) for r in grid), default=0)
 
-    n_cols = ws.max_column or 20
-    header = [ws.cell(row=hdr_idx + 1, column=c + 1).value for c in range(n_cols)]
-    cols = _map_columns(header)
-
-    if 'utr_id' not in cols:
-        utr_col = _find_utr_col_heuristic(ws, hdr_idx + 2, min(n_cols, 20))
-        if utr_col is not None:
-            cols['utr_id'] = utr_col
-
-    if 'utr_id' not in cols:
+    found = _find_utr_column(grid)
+    if not found:
         return []
+    utr_col, data_start = found
+
+    cols = _find_header_above(grid, data_start, n_cols)
+    cols['utr_id'] = utr_col
 
     signals: list[RawSignal] = []
-    for row in ws.iter_rows(min_row=hdr_idx + 2, values_only=True):
-        if not any(row):
-            continue
-        raw_id = row[cols['utr_id']] if cols['utr_id'] < len(row) else None
+    for r in range(data_start, len(grid)):
+        row = grid[r]
+        raw_id = row[utr_col] if utr_col < len(row) else None
         utr_id = str(raw_id).strip() if raw_id else ''
         if not utr_id or not _is_utr_id(utr_id):
             continue
 
-        desc_idx = cols.get('desc')
-        description = str(row[desc_idx]).strip() if (desc_idx is not None and desc_idx < len(row) and row[desc_idx]) else ''
-        module_idx = cols.get('module')
-        module = str(row[module_idx]).strip() if (module_idx is not None and module_idx < len(row) and row[module_idx]) else ''
-        dnp3_idx = cols.get('dnp3')
-        dnp3 = _parse_dnp3(row[dnp3_idx] if (dnp3_idx is not None and dnp3_idx < len(row)) else None)
+        def cell(key):
+            i = cols.get(key)
+            if i is not None and i < len(row) and row[i] not in (None, ''):
+                return row[i]
+            return None
+
+        description = str(cell('desc')).strip() if cell('desc') else ''
+        module = str(cell('module')).strip() if cell('module') else ''
+        dnp3 = _parse_dnp3(cell('dnp3'))
 
         sig_type = default_type or _infer_type(description, sheet_name)
         signals.append(RawSignal(utr_id=utr_id, description=description,
@@ -196,7 +218,14 @@ def parse_raw_excel(data: bytes) -> tuple[list[RawSignal], str]:
 
     def process(sheet_names):
         for sn in sheet_names:
-            default = 'analog' if _ANALOG_SHEETS.search(sn) else 'discrete'
+            # só força o tipo se a aba for explicitamente analógica/discreta;
+            # senão deixa _infer_type decidir por linha (sheets mistas).
+            if _ANALOG_SHEETS.search(sn):
+                default = 'analog'
+            elif re.search(r'discret|digita', sn, re.I):
+                default = 'discrete'
+            else:
+                default = None
             for sig in _extract_sheet(wb[sn], sn, default):
                 if sig.utr_id not in seen:
                     seen.add(sig.utr_id)
@@ -242,34 +271,86 @@ def _load_sigla_flat(protocol: str = 'dnp3') -> dict:
 
 # ─── Mapeamento heurístico ───────────────────────────────────────────────────
 
-def _token_match(utr_id: str, sigla_flat: dict) -> Optional[tuple[str, int]]:
-    """
-    Tenta encontrar um SIGLA como sub-sequência de tokens do UTR ID.
-    Retorna (sigla, confidence) ou None.
-    """
-    tokens = utr_id.upper().split('_')
-    n = len(tokens)
-    # Janelas de 1 a 4 tokens (evita pegar o alias como SIGLA)
-    for start in range(1, n):          # começa em 1 para pular o primeiro token (alias/módulo)
-        for window in range(1, min(5, n - start + 1)):
-            candidate = '_'.join(tokens[start:start + window])
-            if candidate in sigla_flat:
-                return candidate, 100
+_ACCENTS = [('Ã','A'),('Â','A'),('Á','A'),('À','A'),('É','E'),('Ê','E'),
+            ('Í','I'),('Ó','O'),('Ô','O'),('Õ','O'),('Ú','U'),('Ç','C')]
+
+
+def _norm(s: str) -> str:
+    s = re.sub(r'\s+', ' ', str(s or '').upper().strip())
+    for old, new in _ACCENTS:
+        s = s.replace(old, new)
+    return s
+
+
+# Dicionário semântico das medições analógicas mais comuns (descrição → SIGLA).
+# Ordenado do mais específico ao mais genérico (o 1º regex que casar vence).
+_SEMANTIC_RULES: list[tuple[str, str]] = [
+    (r'TENSAO.*\bAB\b|\bVAB\b',            'VAB'),
+    (r'TENSAO.*\bBC\b|\bVBC\b',            'VBC'),
+    (r'TENSAO.*\bCA\b|\bVCA\b',            'VCA'),
+    (r'TENSAO.*FASE\s*A\b|TENSAO\s*A\b|\bVA\b',  'VA'),
+    (r'TENSAO.*FASE\s*B\b|TENSAO\s*B\b|\bVB\b',  'VB'),
+    (r'TENSAO.*FASE\s*C\b|TENSAO\s*C\b|\bVC\b',  'VC'),
+    (r'CORRENTE.*NEUTRO|CORRENTE.*RESIDUAL|\bIN\b', 'IN'),
+    (r'CORRENTE.*FASE\s*A\b|CORRENTE\s*A\b|\bIA\b', 'IA'),
+    (r'CORRENTE.*FASE\s*B\b|CORRENTE\s*B\b|\bIB\b', 'IB'),
+    (r'CORRENTE.*FASE\s*C\b|CORRENTE\s*C\b|\bIC\b', 'IC'),
+    (r'POT.*REATIVA',                      'Q'),   # antes de ATIVA (REATIVA contém ATIVA)
+    (r'POT.*ATIVA',                        'P'),
+    (r'POT.*APARENTE',                     'S'),
+    (r'FREQUENCIA',                        'F'),
+    (r'TAP|COMUTADOR',                     'TAP'),
+]
+_SEMANTIC_COMPILED = [(re.compile(p), s) for p, s in _SEMANTIC_RULES]
+
+
+def _semantic_match(description: str, sig_type: str, sigla_flat: dict) -> Optional[tuple[str, int]]:
+    """Mapeia medições analógicas comuns por semântica da descrição."""
+    if sig_type != 'analog' or not description:
+        return None
+    d = _norm(description)
+    for rx, sigla in _SEMANTIC_COMPILED:
+        if rx.search(d) and sigla in sigla_flat and sigla_flat[sigla]['type'] == 'analog':
+            return sigla, 92
     return None
 
 
-def _desc_match(description: str, sigla_flat: dict) -> Optional[tuple[str, int]]:
-    """Match por descrição exata (normalizada)."""
+def _token_match(utr_id: str, sigla_flat: dict, sig_type: Optional[str] = None) -> Optional[tuple[str, int]]:
+    """
+    Encontra um SIGLA como sub-sequência de tokens do UTR ID, exigindo que o tipo
+    do SIGLA case com o tipo do sinal (evita falsos positivos: TENSAO_FA→FA discreto).
+    Prefere a janela mais LONGA (mais específica). Retorna (sigla, confidence) ou None.
+    """
+    tokens = utr_id.upper().split('_')
+    n = len(tokens)
+    best = None  # (window_len, sigla)
+    for start in range(1, n):          # pula o 1º token (alias/módulo)
+        for window in range(1, min(5, n - start + 1)):
+            candidate = '_'.join(tokens[start:start + window])
+            info = sigla_flat.get(candidate)
+            if not info:
+                continue
+            # tipo deve ser compatível (command conta como discrete)
+            st = 'discrete' if sig_type == 'command' else sig_type
+            if st and info['type'] != st:
+                continue
+            if best is None or window > best[0]:
+                best = (window, candidate)
+    if best:
+        return best[1], 100
+    return None
+
+
+def _desc_match(description: str, sigla_flat: dict, sig_type: Optional[str] = None) -> Optional[tuple[str, int]]:
+    """Match por descrição exata (normalizada), respeitando o tipo do sinal."""
     if not description:
         return None
-    desc_norm = re.sub(r'\s+', ' ', description.upper().strip())
-    # Remove acentos básicos
-    for old, new in [('Ã','A'),('Â','A'),('Á','A'),('À','A'),('É','E'),
-                     ('Ê','E'),('Í','I'),('Ó','O'),('Ô','O'),('Ú','U'),('Ç','C')]:
-        desc_norm = desc_norm.replace(old, new)
+    desc_norm = _norm(description)
+    st = 'discrete' if sig_type == 'command' else sig_type
     for sigla, info in sigla_flat.items():
-        sd = re.sub(r'\s+', ' ', str(info['desc']).upper().strip())
-        if sd and sd == desc_norm:
+        if st and info['type'] != st:
+            continue
+        if _norm(info['desc']) == desc_norm:
             return sigla, 96
     return None
 
@@ -406,16 +487,22 @@ def map_signals(
     unmatched_idx: list[int] = []
 
     for i, sig in enumerate(raw_signals):
-        match = _token_match(sig.utr_id, sigla_flat)
+        st = sig.signal_type
+        # 1) token type-aware (mais específico) → 2) semântico (analógicos) →
+        # 3) descrição exata. Tudo respeitando o tipo do sinal.
+        match = _token_match(sig.utr_id, sigla_flat, st)
+        method = 'token'
+        if not match:
+            match = _semantic_match(sig.description, st, sigla_flat)
+            method = 'semantic'
+        if not match:
+            match = _desc_match(sig.description, sigla_flat, st)
+            method = 'desc'
         if match:
-            heuristic.append((match[0], match[1], 'token'))
+            heuristic.append((match[0], match[1], method))
         else:
-            match2 = _desc_match(sig.description, sigla_flat)
-            if match2:
-                heuristic.append((match2[0], match2[1], 'desc'))
-            else:
-                heuristic.append(None)
-                unmatched_idx.append(i)
+            heuristic.append(None)
+            unmatched_idx.append(i)
 
     if llm_cfg and unmatched_idx:
         unmatched = [raw_signals[i] for i in unmatched_idx]
