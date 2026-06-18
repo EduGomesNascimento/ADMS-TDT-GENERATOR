@@ -46,10 +46,10 @@ const CONF_BADGE: Record<string, string> = {
 };
 
 const PROVIDERS = [
-  { value: "gemini", label: "Gemini 2.0 Flash (grátis)",     model: "gemini-2.0-flash",      hint: "Chave grátis em ai.google.dev — env: GEMINI_API_KEY" },
-  { value: "groq",   label: "Groq / Llama 3.3 70B (grátis)", model: "llama-3.3-70b-versatile", hint: "Chave grátis em console.groq.com — env: GROQ_API_KEY" },
-  { value: "ollama", label: "Ollama (local, grátis, offline)", model: "qwen2.5:7b",               hint: "Requer Ollama: instale e rode 'ollama pull qwen2.5:7b'. Para PCs fracos use qwen2.5:3b." },
-  { value: "none",   label: "Só heurística (sem IA)",         model: "",                        hint: "Sem IA — só tokenização. Bom para listas com códigos explícitos." },
+  { value: "groq",   label: "Groq / Llama 3.3 70B (grátis, recomendado)", model: "llama-3.3-70b-versatile", hint: "Rápido e preciso. Chave grátis em console.groq.com — env: GROQ_API_KEY" },
+  { value: "gemini", label: "Gemini 2.0 Flash (grátis)",     model: "gemini-2.0-flash",      hint: "Chave grátis em aistudio.google.com. Se der 429, a cota do projeto está esgotada — crie uma chave nova." },
+  { value: "ollama", label: "Ollama (local, grátis, offline)", model: "qwen2.5:7b",               hint: "100% offline mas LENTO sem GPU. Em PC sem placa de vídeo, prefira o Groq. Requer 'ollama pull qwen2.5:7b'." },
+  { value: "none",   label: "Só heurística (sem IA)",         model: "",                        hint: "Sem IA — token + semântico (~57%). Instantâneo e offline." },
 ];
 
 function downloadBlob(blob: Blob, filename: string) {
