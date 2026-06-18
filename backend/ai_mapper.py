@@ -393,13 +393,31 @@ def _build_sigla_text(sigla_flat: dict, type_filter: Optional[str] = None) -> st
 
 
 def _parse_llm_json(text: str, n: int) -> list[dict]:
-    m = re.search(r'\[.*\]', text, re.DOTALL)
-    if not m:
-        return [{'idx': i, 'sigla': None, 'confidence': 0, 'alt': None} for i in range(n)]
+    """Aceita array puro OU objeto que embrulha o array (ex.: {"mappings":[...]}),
+    como pode vir do modo JSON do Ollama."""
+    empty = [{'idx': i, 'sigla': None, 'confidence': 0, 'alt': None} for i in range(n)]
+    # tenta o texto inteiro como JSON
+    parsed = None
     try:
-        return json.loads(m.group(0))
-    except json.JSONDecodeError:
-        return [{'idx': i, 'sigla': None, 'confidence': 0, 'alt': None} for i in range(n)]
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        m = re.search(r'\[.*\]', text, re.DOTALL)
+        if m:
+            try:
+                parsed = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                parsed = None
+    if isinstance(parsed, list):
+        return parsed
+    if isinstance(parsed, dict):
+        # pega a 1ª lista de dicts dentro do objeto
+        for v in parsed.values():
+            if isinstance(v, list):
+                return v
+        # objeto único {idx,sigla,...}
+        if 'sigla' in parsed or 'idx' in parsed:
+            return [parsed]
+    return empty
 
 
 def _call_llm(prompt: str, cfg: dict) -> str:
@@ -430,7 +448,12 @@ def _call_llm(prompt: str, cfg: dict) -> str:
             'model': model,
             'messages': [{'role': 'user', 'content': prompt}],
             'stream': False,
-        }, timeout=120)
+            'format': 'json',          # força saída JSON válida
+            'options': {
+                'temperature': 0,      # determinístico
+                'num_ctx': 8192,       # contexto p/ o dicionário + lote
+            },
+        }, timeout=600)               # CPU é lento; lotes podem demorar
         return resp.json()['message']['content']
 
     raise ValueError(f"Provider desconhecido: {provider}")

@@ -48,7 +48,7 @@ const CONF_BADGE: Record<string, string> = {
 const PROVIDERS = [
   { value: "gemini", label: "Gemini 2.0 Flash (grátis)",     model: "gemini-2.0-flash",      hint: "Chave grátis em ai.google.dev — env: GEMINI_API_KEY" },
   { value: "groq",   label: "Groq / Llama 3.3 70B (grátis)", model: "llama-3.3-70b-versatile", hint: "Chave grátis em console.groq.com — env: GROQ_API_KEY" },
-  { value: "ollama", label: "Ollama (local, sem internet)",   model: "phi4-mini",               hint: "Requer Ollama instalado: ollama pull phi4-mini" },
+  { value: "ollama", label: "Ollama (local, grátis, offline)", model: "qwen2.5:7b",               hint: "Requer Ollama: instale e rode 'ollama pull qwen2.5:7b'. Para PCs fracos use qwen2.5:3b." },
   { value: "none",   label: "Só heurística (sem IA)",         model: "",                        hint: "Sem IA — só tokenização. Bom para listas com códigos explícitos." },
 ];
 

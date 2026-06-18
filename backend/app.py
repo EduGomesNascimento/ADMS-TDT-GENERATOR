@@ -275,7 +275,7 @@ async def import_report(request: Request, protocol: str = "dnp3"):
 
 # ─── Raw import (lista não-padrão com IA) ────────────────────────────────────
 
-def _llm_cfg(provider: str, model: str, api_key: str) -> dict | None:
+def _llm_cfg(provider: str, model: str, api_key: str, base_url: str = "") -> dict | None:
     """Monta config LLM; retorna None se provider == 'none'."""
     if provider in ('none', ''):
         return None
@@ -283,7 +283,10 @@ def _llm_cfg(provider: str, model: str, api_key: str) -> dict | None:
     key = api_key or os.environ.get(env_map.get(provider, ''), '')
     if not key and provider != 'ollama':
         return None
-    return {'provider': provider, 'model': model, 'api_key': key}
+    cfg = {'provider': provider, 'model': model, 'api_key': key}
+    if provider == 'ollama':
+        cfg['base_url'] = base_url or os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
+    return cfg
 
 
 @app.post("/api/raw/preview")
@@ -294,6 +297,7 @@ async def raw_preview(
     api_key: str = Form(""),
     alias: str = Form(""),
     protocol: str = Form("dnp3"),
+    base_url: str = Form(""),
 ):
     """Parseia lista não-padrão e mapeia sinais com IA. Retorna JSON."""
     data = await file.read()
@@ -305,7 +309,7 @@ async def raw_preview(
         raise HTTPException(400, f"falha ao ler o arquivo: {e}")
 
     eff_alias = alias.strip() or detected_alias
-    cfg = _llm_cfg(provider, model, api_key)
+    cfg = _llm_cfg(provider, model, api_key, base_url)
 
     try:
         mapped = ai_mapper.map_signals(raw_signals, protocol=protocol, llm_cfg=cfg)
@@ -355,6 +359,7 @@ async def raw_report(
     api_key: str = Form(""),
     alias: str = Form(""),
     protocol: str = Form("dnp3"),
+    base_url: str = Form(""),
 ):
     """Gera o arquivo de probabilidades .xlsx."""
     data = await file.read()
@@ -362,7 +367,7 @@ async def raw_report(
         raise HTTPException(400, "arquivo vazio")
     raw_signals, detected_alias = ai_mapper.parse_raw_excel(data)
     eff_alias = alias.strip() or detected_alias
-    cfg = _llm_cfg(provider, model, api_key)
+    cfg = _llm_cfg(provider, model, api_key, base_url)
     mapped = ai_mapper.map_signals(raw_signals, protocol=protocol, llm_cfg=cfg)
     xlsx = probability_report.build_probability_xlsx(
         mapped, alias=eff_alias, source_file=file.filename or '')
@@ -384,6 +389,7 @@ async def raw_export(
     alias: str = Form(""),
     min_confidence: int = Form(60),
     protocol: str = Form("dnp3"),
+    base_url: str = Form(""),
 ):
     """Gera a TDT .xlsx a partir da lista não-padrão mapeada."""
     data = await file.read()
@@ -393,7 +399,7 @@ async def raw_export(
     eff_alias = alias.strip() or detected_alias
     if not eff_alias:
         raise HTTPException(400, "alias da subestação não detectado — informe manualmente")
-    cfg = _llm_cfg(provider, model, api_key)
+    cfg = _llm_cfg(provider, model, api_key, base_url)
     mapped = ai_mapper.map_signals(raw_signals, protocol=protocol, llm_cfg=cfg)
     lista = ai_mapper.to_lista_resumida(mapped, eff_alias, min_confidence=min_confidence)
     try:
