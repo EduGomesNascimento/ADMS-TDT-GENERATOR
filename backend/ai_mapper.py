@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -356,7 +357,38 @@ def _desc_match(description: str, sigla_flat: dict, sig_type: Optional[str] = No
 
 # ─── Backend LLM ─────────────────────────────────────────────────────────────
 
-_BATCH_SIZE = 40
+_BATCH_SIZE = 25
+_CAND_CAP = 160          # nº máx. de SIGLAs candidatos enviados por lote
+_STOP = {'do','da','de','no','na','o','a','e','-','(',')','at','bt','mt','fase'}
+
+
+def _desc_tokens(text: str) -> set:
+    return {t for t in re.split(r'[^A-Z0-9]+', _norm(text)) if len(t) >= 2 and t not in _STOP}
+
+
+def _build_inverted(sigla_flat: dict) -> dict:
+    """token (da descrição/código do SIGLA) -> set de SIGLAs."""
+    inv: dict = {}
+    for sigla, info in sigla_flat.items():
+        toks = _desc_tokens(info['desc']) | _desc_tokens(sigla)
+        for t in toks:
+            inv.setdefault(t, set()).add(sigla)
+    return inv
+
+
+def _candidates(batch, sigla_flat: dict, inv: dict, sig_type: Optional[str]) -> list[str]:
+    """Recupera os SIGLAs mais relevantes para o lote (por sobreposição de tokens),
+    respeitando o tipo. Mantém o prompt pequeno (cabe em tiers grátis)."""
+    st = 'discrete' if sig_type == 'command' else sig_type
+    score: dict = {}
+    for s in batch:
+        for t in (_desc_tokens(s.description) | _desc_tokens(s.utr_id)):
+            for sig in inv.get(t, ()):
+                if st and sigla_flat[sig]['type'] != st:
+                    continue
+                score[sig] = score.get(sig, 0) + 1
+    ranked = sorted(score, key=score.get, reverse=True)[:_CAND_CAP]
+    return ranked
 
 _PROMPT = """\
 Você é especialista em sistemas SCADA de subestações elétricas brasileiras.
@@ -381,14 +413,13 @@ Retorne APENAS um array JSON (sem markdown, sem explicação):
 """
 
 
-def _build_sigla_text(sigla_flat: dict, type_filter: Optional[str] = None) -> str:
+def _build_sigla_text(sigla_flat: dict, siglas: list[str]) -> str:
+    """Monta o texto do dicionário só com os SIGLAs candidatos informados."""
     lines = []
-    for sigla, info in sorted(sigla_flat.items()):
-        if type_filter == 'analog' and info['type'] != 'analog':
-            continue
-        if type_filter == 'discrete' and info['type'] == 'analog':
-            continue
-        lines.append(f"{sigla}: {info['desc']} ({info['type']})")
+    for sigla in siglas:
+        info = sigla_flat.get(sigla)
+        if info:
+            lines.append(f"{sigla}: {info['desc']}")
     return '\n'.join(lines)
 
 
@@ -461,27 +492,40 @@ def _call_llm(prompt: str, cfg: dict) -> str:
 
 def _map_llm(signals: list[RawSignal], sigla_flat: dict, llm_cfg: dict) -> list[Optional[tuple[str, int]]]:
     results: list[Optional[tuple[str, int]]] = [None] * len(signals)
+    inv = _build_inverted(sigla_flat)
     for batch_start in range(0, len(signals), _BATCH_SIZE):
         batch = signals[batch_start:batch_start + _BATCH_SIZE]
         types = [s.signal_type for s in batch]
         dominant = max(set(types), key=types.count) if types else None
-        sigla_text = _build_sigla_text(sigla_flat, dominant)
+        cands = _candidates(batch, sigla_flat, inv, dominant)
+        if not cands:
+            continue
+        sigla_text = _build_sigla_text(sigla_flat, cands)
         signal_text = '\n'.join(
             f"{i} | {s.utr_id} | {s.description} | {s.signal_type}"
             for i, s in enumerate(batch)
         )
         prompt = _PROMPT.format(sigla_list=sigla_text, signal_list=signal_text)
-        try:
-            raw = _call_llm(prompt, llm_cfg)
-            parsed = _parse_llm_json(raw, len(batch))
-            for item in parsed:
-                idx = item.get('idx', 0)
-                sigla = item.get('sigla')
-                conf = int(item.get('confidence') or 0)
-                if sigla and sigla in sigla_flat and 0 <= idx < len(batch):
-                    results[batch_start + idx] = (sigla, conf)
-        except Exception as e:
-            log.warning("LLM batch %d falhou: %s", batch_start, e)
+        # retry com backoff p/ limites de taxa dos tiers grátis (429/413/rate)
+        for attempt in range(4):
+            try:
+                raw = _call_llm(prompt, llm_cfg)
+                parsed = _parse_llm_json(raw, len(batch))
+                for item in parsed:
+                    idx = item.get('idx', 0)
+                    sigla = item.get('sigla')
+                    conf = int(item.get('confidence') or 0)
+                    if sigla and sigla in sigla_flat and 0 <= idx < len(batch):
+                        results[batch_start + idx] = (sigla, conf)
+                break
+            except Exception as e:
+                msg = str(e).lower()
+                transient = any(k in msg for k in ('429', '413', 'rate', 'quota', 'exhaust', 'timeout'))
+                if transient and attempt < 3:
+                    time.sleep(8 * (attempt + 1))   # 8s, 16s, 24s
+                    continue
+                log.warning("LLM batch %d falhou: %s", batch_start, e)
+                break
     return results
 
 # ─── Mapeamento principal ─────────────────────────────────────────────────────
