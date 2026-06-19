@@ -28,7 +28,17 @@ interface RawPreview {
   discrete: { total: number; alta: number; media: number; baixa: number; sem: number };
   analog: { total: number; alta: number; media: number; baixa: number; sem: number };
   signals: MappedSignal[];
+  llmNote?: string | null;
+  llmSkipped?: number;
+  usedLLM?: boolean;
 }
+
+// Opções de confiança mínima para incluir na TDT (tratamento de exceções)
+const CONF_OPTIONS = [
+  { value: 90, label: "Só ALTA — máxima confiabilidade",  hint: "Apenas os determinísticos exatos. Zero risco de erro, menor cobertura." },
+  { value: 70, label: "ALTA + MÉDIA (recomendado)",        hint: "Inclui também os prováveis (IA/fuzzy). Bom equilíbrio." },
+  { value: 60, label: "Tudo (≥60%) — máxima cobertura",   hint: "Inclui os incertos. Revise tudo antes de importar no ADMS." },
+];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -88,8 +98,10 @@ export function RawImportPanel({ onBack }: Props) {
   const [result,     setResult]     = useState<RawPreview | null>(null);
   const [showAll,    setShowAll]    = useState(false);
   const [exporting,  setExporting]  = useState<"prob" | "tdt" | null>(null);
+  const [minConfIdx, setMinConfIdx] = useState(1);   // padrão: ALTA+MÉDIA
 
   const prov = PROVIDERS[providerIdx];
+  const minConf = CONF_OPTIONS[minConfIdx];
 
   function makeForm(): FormData {
     const fd = new FormData();
@@ -99,6 +111,7 @@ export function RawImportPanel({ onBack }: Props) {
     fd.append("api_key",  apiKey);
     fd.append("alias",    alias.trim());
     fd.append("protocol", protocol);
+    fd.append("min_confidence", String(minConf.value));
     if (prov.value === "ollama") fd.set("base_url", ollamaUrl);
     return fd;
   }
@@ -336,8 +349,33 @@ export function RawImportPanel({ onBack }: Props) {
               })}
             </div>
 
+            {/* Aviso de exceção da IA (limite/erro) */}
+            {result.llmNote && (
+              <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <span>{result.llmNote}</span>
+              </div>
+            )}
+
+            {/* OPÇÃO: confiança mínima para a TDT */}
+            <div className="mt-4">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+                O que incluir na TDT exportada
+              </label>
+              <select
+                value={minConfIdx}
+                onChange={(e) => setMinConfIdx(Number(e.target.value))}
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+              >
+                {CONF_OPTIONS.map((o, i) => (
+                  <option key={o.value} value={i}>{o.label}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">{minConf.hint}</p>
+            </div>
+
             {/* Ações */}
-            <div className="mt-5 flex gap-3">
+            <div className="mt-4 flex gap-3">
               <button
                 onClick={downloadProb}
                 disabled={exporting !== null}
@@ -360,7 +398,8 @@ export function RawImportPanel({ onBack }: Props) {
               </button>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              A TDT inclui apenas sinais com confiança ≥ 60%. Revise o arquivo de Probabilidades antes de importar no ADMS.
+              <strong className="text-emerald-400">ALTA</strong> = determinístico, confiável.{" "}
+              <strong className="text-amber-400">MÉDIA/BAIXA</strong> = IA/aproximado, revise no relatório de Probabilidades antes de importar no ADMS.
             </p>
           </div>
 

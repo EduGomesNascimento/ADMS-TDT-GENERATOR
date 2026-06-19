@@ -327,8 +327,9 @@ async def raw_preview(
     eff_alias = alias.strip() or detected_alias
     cfg = _llm_cfg(provider, model, api_key, base_url)
 
+    llm_stats: dict = {}
     try:
-        mapped = ai_mapper.map_signals(raw_signals, protocol=protocol, llm_cfg=cfg)
+        mapped = ai_mapper.map_signals(raw_signals, protocol=protocol, llm_cfg=cfg, stats=llm_stats)
     except Exception as e:
         raise HTTPException(500, f"falha no mapeamento: {e}")
 
@@ -344,11 +345,27 @@ async def raw_preview(
     discrete = [m for m in mapped if m.signal_type != 'analog']
     analog   = [m for m in mapped if m.signal_type == 'analog']
 
+    # tratamento de exceções da IA → aviso para o usuário
+    llm_note = None
+    if cfg and llm_stats.get('failed_batches'):
+        sk = llm_stats.get('skipped', 0)
+        if llm_stats.get('quota_hit'):
+            llm_note = (f"⚠️ Limite diário da IA atingido — {sk} sinais não foram processados "
+                        f"pela IA. Opções: (1) rode de novo amanhã, (2) troque de provedor/chave, "
+                        f"ou (3) use 'Só heurística' (determinístico, sem limite). "
+                        f"Os sinais ALTA já estão prontos.")
+        else:
+            llm_note = (f"⚠️ {sk} sinais não foram processados pela IA (erro de conexão/limite). "
+                        f"Tente novamente; os já mapeados estão preservados.")
+
     return {
         'detectedAlias': detected_alias,
         'alias': eff_alias,
         'discrete': _stats(discrete),
         'analog': _stats(analog),
+        'llmNote': llm_note,
+        'llmSkipped': llm_stats.get('skipped', 0),
+        'usedLLM': bool(cfg),
         'signals': [
             {
                 'utrId': m.utr_id,

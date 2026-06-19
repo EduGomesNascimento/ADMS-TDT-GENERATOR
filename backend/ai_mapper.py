@@ -601,9 +601,14 @@ def _call_llm(prompt: str, cfg: dict) -> str:
     raise ValueError(f"Provider desconhecido: {provider}")
 
 
-def _map_llm(signals: list[RawSignal], sigla_flat: dict, llm_cfg: dict) -> list[Optional[tuple[str, int]]]:
+def _map_llm(signals: list[RawSignal], sigla_flat: dict, llm_cfg: dict,
+             stats: Optional[dict] = None) -> list[Optional[tuple[str, int]]]:
     results: list[Optional[tuple[str, int]]] = [None] * len(signals)
     inv = _build_inverted(sigla_flat)
+    st = stats if stats is not None else {}
+    st.setdefault('batches', 0); st.setdefault('failed_batches', 0)
+    st.setdefault('skipped', 0); st.setdefault('last_error', '')
+    st.setdefault('quota_hit', False)
     for batch_start in range(0, len(signals), _BATCH_SIZE):
         batch = signals[batch_start:batch_start + _BATCH_SIZE]
         types = [s.signal_type for s in batch]
@@ -617,6 +622,7 @@ def _map_llm(signals: list[RawSignal], sigla_flat: dict, llm_cfg: dict) -> list[
             for i, s in enumerate(batch)
         )
         prompt = _PROMPT.format(sigla_list=sigla_text, signal_list=signal_text)
+        st['batches'] += 1
         # retry com backoff p/ limites de taxa dos tiers grátis (429/413/rate)
         for attempt in range(4):
             try:
@@ -635,6 +641,12 @@ def _map_llm(signals: list[RawSignal], sigla_flat: dict, llm_cfg: dict) -> list[
                 if transient and attempt < 3:
                     time.sleep(8 * (attempt + 1))   # 8s, 16s, 24s
                     continue
+                # exceção: lote não processado pela IA — registra para avisar o usuário
+                st['failed_batches'] += 1
+                st['skipped'] += len(batch)
+                st['last_error'] = str(e)[:200]
+                if any(k in msg for k in ('quota', 'tokens per day', 'tpd', 'exhaust', 'resource_exhausted')):
+                    st['quota_hit'] = True
                 log.warning("LLM batch %d falhou: %s", batch_start, e)
                 break
     return results
@@ -655,10 +667,12 @@ def map_signals(
     raw_signals: list[RawSignal],
     protocol: str = 'dnp3',
     llm_cfg: Optional[dict] = None,
+    stats: Optional[dict] = None,
 ) -> list[MappedSignal]:
     """
     Mapeia sinais brutos para SIGLAs ADMS.
     llm_cfg = {'provider': 'gemini'|'groq'|'ollama', 'model': ..., 'api_key': ...}
+    stats   = dict opcional preenchido com exceções da IA (lotes falhos, cota, etc.)
     """
     sigla_flat = _load_sigla_flat(protocol)
     inv = _build_inverted(sigla_flat)        # token -> SIGLAs (reutilizado p/ fuzzy e LLM)
@@ -690,7 +704,7 @@ def map_signals(
 
     if llm_cfg and unmatched_idx:
         unmatched = [raw_signals[i] for i in unmatched_idx]
-        llm_res = _map_llm(unmatched, sigla_flat, llm_cfg)
+        llm_res = _map_llm(unmatched, sigla_flat, llm_cfg, stats=stats)
         for batch_i, orig_i in enumerate(unmatched_idx):
             if llm_res[batch_i]:
                 sigla, conf = llm_res[batch_i]
