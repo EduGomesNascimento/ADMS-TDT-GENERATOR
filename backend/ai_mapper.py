@@ -323,10 +323,25 @@ _ACCENTS = [('Ã','A'),('Â','A'),('Á','A'),('À','A'),('É','E'),('Ê','E'),
             ('Í','I'),('Ó','O'),('Ô','O'),('Õ','O'),('Ú','U'),('Ç','C')]
 
 
+# Abreviações comuns em listas de campo → forma plena (alinha lista x base ADMS).
+# Aplicadas por palavra inteira (word-boundary) para não estragar palavras maiores.
+_ABBREV = {
+    'DISJ': 'DISJUNTOR', 'SEC': 'SECCIONADORA', 'SECC': 'SECCIONADORA',
+    'TEMP': 'TEMPERATURA', 'POT': 'POTENCIA', 'CORR': 'CORRENTE',
+    'TENS': 'TENSAO', 'DESL': 'DESLIGAMENTO', 'DESLIG': 'DESLIGAMENTO',
+    'ALM': 'ALARME', 'ALARM': 'ALARME', 'RELIG': 'RELIGAMENTO',
+    'SUBTENS': 'SUBTENSAO', 'SOBRETENS': 'SOBRETENSAO', 'SOBRECORR': 'SOBRECORRENTE',
+    'FREQ': 'FREQUENCIA', 'ENROL': 'ENROLAMENTO', 'PRES': 'PRESSAO',
+    'SINAL': 'SINALIZACAO', 'COMUT': 'COMUTADOR', 'PROT': 'PROTECAO',
+}
+_ABBREV_RE = re.compile(r'\b(' + '|'.join(sorted(_ABBREV, key=len, reverse=True)) + r')\b')
+
+
 def _norm(s: str) -> str:
     s = re.sub(r'\s+', ' ', str(s or '').upper().strip())
     for old, new in _ACCENTS:
         s = s.replace(old, new)
+    s = _ABBREV_RE.sub(lambda m: _ABBREV[m.group(1)], s)
     return s
 
 
@@ -360,6 +375,77 @@ def _semantic_match(description: str, sig_type: str, sigla_flat: dict) -> Option
     for rx, sigla in _SEMANTIC_COMPILED:
         if rx.search(d) and sigla in sigla_flat and sigla_flat[sigla]['type'] == 'analog':
             return sigla, 92
+    return None
+
+
+# Regras semânticas de PROTEÇÃO (descrição → SIGLA de função, discretos).
+# Family-match: a função é certa mas o vão pode variar → confiança MÉDIA (82).
+_PROT_RULES: list[tuple[str, str]] = [
+    (r'SUBTENSAO',                       '27_T'),
+    (r'SOBRETENSAO',                     '59'),
+    (r'RELIGAMENTO',                     '79'),
+    (r'\bBLOQUEIO\b|LOCKOUT',            '86'),
+    (r'SEQUENCIA NEGATIVA',              '46'),
+    (r'\b86\s*BF\b|FALHA.*DISJUNTOR|BREAKER FAILURE', '86BF'),
+    (r'DIFERENCIAL',                     '87'),
+    (r'\bBUCHHOLZ\b',                    '63TD'),
+    (r'\b20\b.*VALVULA|VALVULA.*ALIVIO|ALIVIO.*PRESSAO', '20A'),
+    (r'\b46\b.*SEQUENCIA',               '46'),
+    (r'BAIXA PRESSAO SF6|SF6.*ALARME',   'SF6A'),
+    (r'\bMOLA\b.*(CARREG|DESCARR)|MOLA DO DISJUNTOR', 'MOLA'),
+    (r'LOCAL.*REMOTO|REMOTO.*LOCAL|\b43LR\b', '43LR'),
+    (r'TELECOMANDO|\b43TC\b',            '43TC'),
+]
+_PROT_COMPILED = [(re.compile(p), s) for p, s in _PROT_RULES]
+
+
+def _prot_match(description: str, sig_type: str, sigla_flat: dict) -> Optional[tuple[str, int]]:
+    """Mapeia funções de proteção/controle comuns por palavra-chave da descrição.
+    Só discretos/comandos; confiança MÉDIA (família certa, vão pode variar)."""
+    st = 'discrete' if sig_type == 'command' else sig_type
+    if st != 'discrete' or not description:
+        return None
+    d = _norm(description)
+    for rx, sigla in _PROT_COMPILED:
+        if rx.search(d) and sigla in sigla_flat and sigla_flat[sigla]['type'] != 'analog':
+            return sigla, 82
+    return None
+
+
+# Base oficial ADMS (Pontos Padrão v1): descrição normalizada → SIGLA. Quando a
+# lista usa a descrição padronizada, é um match exato e confiável (ALTA).
+_OFFICIAL: Optional[dict] = None
+
+
+def _load_official() -> dict:
+    global _OFFICIAL
+    if _OFFICIAL is not None:
+        return _OFFICIAL
+    _OFFICIAL = {'discrete': {}, 'analog': {}}
+    path = Path(__file__).parent / 'data' / 'padrao_adms.json'
+    try:
+        raw = json.loads(path.read_text(encoding='utf-8'))
+        for kind in ('discrete', 'analog'):
+            for sig, desc in raw.get(kind, {}).items():
+                d = _norm(desc)
+                if d and d != _norm(sig):
+                    _OFFICIAL[kind].setdefault(d, sig)
+    except Exception:
+        pass
+    return _OFFICIAL
+
+
+def _official_match(description: str, sig_type: str, sigla_flat: dict) -> Optional[tuple[str, int]]:
+    """Match exato contra as descrições da base oficial ADMS (ALTA)."""
+    if not description:
+        return None
+    off = _load_official()
+    st = 'discrete' if sig_type == 'command' else sig_type
+    d = _norm(description)
+    for kind in (('analog',) if st == 'analog' else ('discrete', 'analog')):
+        sig = off[kind].get(d)
+        if sig and sig in sigla_flat:
+            return sig, 94
     return None
 
 
@@ -691,8 +777,14 @@ def map_signals(
             match = _semantic_match(sig.description, st, sigla_flat)
             method = 'semantic'
         if not match:
+            match = _official_match(sig.description, st, sigla_flat)
+            method = 'oficial'
+        if not match:
             match = _desc_match(sig.description, sigla_flat, st)
             method = 'desc'
+        if not match:
+            match = _prot_match(sig.description, st, sigla_flat)
+            method = 'protecao'
         if not match:
             match = _fuzzy_match(sig, sigla_flat, inv, det, st)
             method = 'fuzzy'
