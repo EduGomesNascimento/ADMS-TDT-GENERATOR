@@ -829,38 +829,51 @@ def map_signals(
 
 # ─── Converte para lista resumida (entrada do generate_tdt_from_list) ─────────
 
+def _add_to_lista(discrete, analog, da, sigla, nome, stype, addr, aor):
+    """Adiciona um sinal à lista no formato que generate_tdt_from_list consome
+    (chaves inCoord/outCoord/escala — NÃO indexDnp3*, senão o endereço some)."""
+    addr = str(addr) if addr not in (None, '') else ''
+    if stype == 'analog':
+        analog.append({'sigla': sigla, 'nome': nome, 'escala': '',
+                       'inCoord': addr, 'aor': aor})
+    elif stype == 'discrete_analog':
+        da.append({'sigla': sigla, 'nome': nome, 'escala': '',
+                   'inCoord': addr, 'aor': aor})
+    elif stype == 'command':
+        discrete.append({'sigla': sigla, 'nome': nome,
+                         'inCoord': '', 'outCoord': addr, 'aor': aor})
+    else:
+        discrete.append({'sigla': sigla, 'nome': nome,
+                         'inCoord': addr, 'outCoord': '', 'aor': aor})
+
+
 def to_lista_resumida(mapped: list[MappedSignal], alias: str,
                       min_confidence: int = 60) -> dict:
-    """
-    Converte sinais mapeados para o formato de parse_points_list,
-    para ser consumido por generate_tdt_from_list.
-    """
-    discrete: list[dict] = []
-    analog:   list[dict] = []
-    da:       list[dict] = []
-
-    aor_suffix = 'Distr'   # default; pode ser refinado
-
+    """Converte sinais mapeados → formato de generate_tdt_from_list (filtra por confiança)."""
+    discrete, analog, da = [], [], []
     for m in mapped:
         if not m.sigla or m.confidence < min_confidence:
             continue
         module = m.module or 'XX'
         nome = f"{alias}_{module}_{module}_{m.sigla}"
-        aor  = f"{alias} {aor_suffix}"
-        addr = str(m.dnp3_addr) if m.dnp3_addr else ''
+        _add_to_lista(discrete, analog, da, m.sigla, nome, m.signal_type,
+                      m.dnp3_addr, f"{alias} Distr")
+    return {'discrete': discrete, 'analog': analog,
+            'discrete_analog': da, 'inputErrors': []}
 
-        if m.signal_type == 'analog':
-            analog.append({'sigla': m.sigla, 'nome': nome,
-                           'escala': '', 'indexDnp3': addr, 'aor': aor})
-        elif m.signal_type == 'command':
-            # comando: vai como discreto com o índice no campo comando
-            discrete.append({'sigla': m.sigla, 'nome': nome,
-                             'indexDnp3Entrada': '', 'indexDnp3Comando': addr,
-                             'aor': aor})
-        else:
-            discrete.append({'sigla': m.sigla, 'nome': nome,
-                             'indexDnp3Entrada': addr, 'indexDnp3Comando': '',
-                             'aor': aor})
 
+def reviewed_to_lista(signals: list[dict], alias: str) -> dict:
+    """Converte os sinais REVISADOS pelo usuário (cada um já com a SIGLA confirmada)
+    → formato de generate_tdt_from_list. Sem filtro de confiança (já confirmado)."""
+    discrete, analog, da = [], [], []
+    for s in signals:
+        sig = (s.get('sigla') or '').strip()
+        if not sig:
+            continue
+        module = (s.get('module') or 'XX').strip() or 'XX'
+        nome = f"{alias}_{module}_{module}_{sig}"
+        _add_to_lista(discrete, analog, da, sig, nome,
+                      s.get('signalType', 'discrete'), s.get('dnp3Addr'),
+                      f"{alias} Distr")
     return {'discrete': discrete, 'analog': analog,
             'discrete_analog': da, 'inputErrors': []}

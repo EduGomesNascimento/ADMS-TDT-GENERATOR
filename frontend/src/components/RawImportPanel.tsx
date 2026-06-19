@@ -99,6 +99,10 @@ export function RawImportPanel({ onBack }: Props) {
   const [showAll,    setShowAll]    = useState(false);
   const [exporting,  setExporting]  = useState<"prob" | "tdt" | null>(null);
   const [minConfIdx, setMinConfIdx] = useState(1);   // padrão: ALTA+MÉDIA
+  const [edits,      setEdits]      = useState<Record<number, string>>({});
+  const [siglaOpts,  setSiglaOpts]  = useState<string[]>([]);
+  const [onlyPending,setOnlyPending]= useState(false);
+  const [genRev,     setGenRev]     = useState(false);
 
   const prov = PROVIDERS[providerIdx];
   const minConf = CONF_OPTIONS[minConfIdx];
@@ -124,11 +128,46 @@ export function RawImportPanel({ onBack }: Props) {
       if (!r.ok) throw new Error((await r.text()) || "Falha na análise");
       const data: RawPreview = await r.json();
       setResult(data);
+      setEdits({});
       if (!alias && data.detectedAlias) setAlias(data.detectedAlias);
+      // carrega as SIGLAs válidas para o autocomplete da revisão
+      fetch(`${BASE}/raw/siglas?protocol=${protocol}`)
+        .then((rr) => rr.json())
+        .then((d) => setSiglaOpts([...(d.discrete || []), ...(d.analog || [])].map((x: any) => x.sigla)))
+        .catch(() => {});
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // gera a TDT a partir dos sinais REVISADOS (sugestão + correções do usuário)
+  async function genReviewed() {
+    if (!result) return;
+    setGenRev(true); setError(null);
+    try {
+      const reviewed = result.signals
+        .map((m, idx) => ({
+          module: m.module,
+          signalType: m.signalType,
+          sigla: (edits[idx] ?? m.sigla ?? "").trim(),
+          dnp3Addr: m.dnp3Addr,
+        }))
+        .filter((s) => s.sigla);
+      const r = await fetch(`${BASE}/raw/export_reviewed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alias: (alias.trim() || result.alias), protocol, signals: reviewed }),
+      });
+      if (!r.ok) throw new Error((await r.text()) || "Falha");
+      const blob = await r.blob();
+      const m = (r.headers.get("Content-Disposition") || "").match(/filename="?([^"]+)"?/);
+      downloadBlob(blob, m ? m[1] : "TDT_revisada.xlsx");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setGenRev(false);
     }
   }
 
@@ -167,7 +206,12 @@ export function RawImportPanel({ onBack }: Props) {
   }
 
   const signals = result?.signals || [];
-  const displayed = showAll ? signals : signals.slice(0, 80);
+  // mantém o índice ORIGINAL (para rastrear edições) ao filtrar/cortar
+  const rows = signals
+    .map((m, idx) => ({ m, idx }))
+    .filter(({ m }) => !onlyPending || m.confidenceLabel !== "ALTA");
+  const displayed = showAll ? rows : rows.slice(0, 80);
+  const reviewedCount = signals.filter((m, idx) => (edits[idx] ?? m.sigla ?? "").trim()).length;
 
   return (
     <div className="space-y-5">
@@ -403,28 +447,50 @@ export function RawImportPanel({ onBack }: Props) {
             </p>
           </div>
 
-          {/* Tabela de sinais */}
+          {/* Revisão dos sinais (pré-marcado, o usuário confere/corrige) */}
+          <datalist id="siglaOpts">
+            {siglaOpts.map((s) => <option key={s} value={s} />)}
+          </datalist>
           <div className="glass rounded-2xl p-4">
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
-              Sinais mapeados ({signals.length})
-            </h3>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+                Revisão ({rows.length} de {signals.length})
+              </h3>
+              <div className="flex items-center gap-3">
+                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400">
+                  <input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} />
+                  Só pendentes (MÉDIA/BAIXA/SEM)
+                </label>
+                <button
+                  onClick={genReviewed}
+                  disabled={genRev || reviewedCount === 0}
+                  className="btn-primary text-xs"
+                >
+                  {genRev ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                  Confirmar e gerar TDT ({reviewedCount})
+                </button>
+              </div>
+            </div>
+            <p className="mb-2 text-xs text-slate-500">
+              A SIGLA já vem <strong className="text-slate-300">pré-marcada</strong>. Confira os{" "}
+              <strong className="text-amber-400">amarelos/vermelhos</strong>; clique na célula SIGLA para corrigir (autocomplete), ou apague para excluir o sinal.
+            </p>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-left text-slate-400 border-b border-slate-700/50">
-                    <th className="pb-2 pr-3 font-semibold">UTR ID</th>
                     <th className="pb-2 pr-3 font-semibold">Módulo</th>
-                    <th className="pb-2 pr-3 font-semibold">Descrição</th>
-                    <th className="pb-2 pr-3 font-semibold">SIGLA ADMS</th>
+                    <th className="pb-2 pr-3 font-semibold">Descrição (campo)</th>
+                    <th className="pb-2 pr-3 font-semibold">SIGLA ADMS ✎</th>
                     <th className="pb-2 pr-3 font-semibold">Descrição ADMS</th>
                     <th className="pb-2 pr-3 font-semibold">DNP3</th>
                     <th className="pb-2 font-semibold">Conf.</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {displayed.map((m, i) => (
+                  {displayed.map(({ m, idx }) => (
                     <tr
-                      key={i}
+                      key={idx}
                       className={clsx(
                         "border-l-2",
                         m.confidenceLabel === "ALTA"  && "border-l-emerald-600",
@@ -433,15 +499,22 @@ export function RawImportPanel({ onBack }: Props) {
                         m.confidenceLabel === "SEM"   && "border-l-slate-700",
                       )}
                     >
-                      <td className="py-1.5 pr-3 font-mono text-slate-300">{m.utrId}</td>
                       <td className="py-1.5 pr-3 text-slate-400">{m.module}</td>
-                      <td className="py-1.5 pr-3 text-slate-300 max-w-[180px] truncate" title={m.description}>{m.description}</td>
-                      <td className="py-1.5 pr-3">
-                        {m.sigla
-                          ? <span className="rounded bg-brand-900/40 px-1.5 py-0.5 font-mono text-brand-300">{m.sigla}</span>
-                          : <span className="text-slate-600">—</span>}
+                      <td className="py-1.5 pr-3 text-slate-300 max-w-[200px] truncate" title={m.description}>{m.description}</td>
+                      <td className="py-1 pr-3">
+                        <input
+                          list="siglaOpts"
+                          value={edits[idx] ?? m.sigla ?? ""}
+                          onChange={(e) => setEdits((p) => ({ ...p, [idx]: e.target.value.toUpperCase() }))}
+                          placeholder="—"
+                          className={clsx(
+                            "w-28 rounded border bg-slate-800/80 px-1.5 py-1 font-mono text-xs focus:border-brand-500 focus:outline-none",
+                            (edits[idx] ?? m.sigla) ? "border-slate-700 text-brand-300" : "border-red-700/50 text-slate-500",
+                            edits[idx] !== undefined && "border-amber-500/60",
+                          )}
+                        />
                       </td>
-                      <td className="py-1.5 pr-3 text-slate-400">{m.siglaDesc || ''}</td>
+                      <td className="py-1.5 pr-3 text-slate-400 max-w-[160px] truncate" title={m.siglaDesc || ''}>{m.siglaDesc || ''}</td>
                       <td className="py-1.5 pr-3 font-mono text-slate-400">{m.dnp3Addr ?? '—'}</td>
                       <td className={clsx("py-1.5 font-semibold", CONF_BADGE[m.confidenceLabel])}>
                         {m.confidence > 0 ? `${m.confidence}%` : '—'}
@@ -452,14 +525,14 @@ export function RawImportPanel({ onBack }: Props) {
               </table>
             </div>
 
-            {signals.length > 80 && (
+            {rows.length > 80 && (
               <button
                 onClick={() => setShowAll(!showAll)}
                 className="mt-3 flex w-full items-center justify-center gap-1 text-xs text-slate-500 hover:text-slate-300"
               >
                 {showAll
                   ? <><ChevronUp size={14} /> Mostrar menos</>
-                  : <><ChevronDown size={14} /> Mostrar todos ({signals.length})</>}
+                  : <><ChevronDown size={14} /> Mostrar todos ({rows.length})</>}
               </button>
             )}
           </div>

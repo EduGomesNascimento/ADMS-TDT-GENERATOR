@@ -448,6 +448,56 @@ async def raw_export(
     )
 
 
+@app.get("/api/raw/siglas")
+def raw_siglas(protocol: str = "dnp3"):
+    """Lista as SIGLAs válidas (para o seletor da tela de revisão)."""
+    import json as _json
+    proto = tdt_engine.PROTOCOLS.get(protocol, tdt_engine.PROTOCOLS["dnp3"])
+    idx = _json.loads(Path(proto["index"]).read_text(encoding="utf-8"))
+    out = {"discrete": [], "analog": []}
+    for sheet, key in ((proto["discrete"], "discrete"), (proto["analog"], "analog")):
+        for sigla, row in idx.get(sheet, {}).items():
+            desc = row[2] if len(row) > 2 else sigla
+            out[key].append({"sigla": sigla, "desc": str(desc or sigla)})
+    out["discrete"].sort(key=lambda x: x["sigla"])
+    out["analog"].sort(key=lambda x: x["sigla"])
+    return out
+
+
+class ReviewedSignal(BaseModel):
+    module: str | None = None
+    signalType: str = "discrete"
+    sigla: str
+    dnp3Addr: int | str | None = None
+
+
+class ReviewedExport(BaseModel):
+    alias: str
+    protocol: str = "dnp3"
+    signals: list[ReviewedSignal]
+
+
+@app.post("/api/raw/export_reviewed")
+def raw_export_reviewed(cfg: ReviewedExport):
+    """Gera a TDT a partir dos sinais REVISADOS/confirmados pelo usuário."""
+    alias = cfg.alias.strip()
+    if not alias:
+        raise HTTPException(400, "informe o alias da subestação")
+    signals = [s.model_dump() for s in cfg.signals]
+    lista = ai_mapper.reviewed_to_lista(signals, alias)
+    try:
+        xlsx, _ = generate_tdt_from_list(lista, cfg.protocol)
+    except Exception as e:
+        raise HTTPException(500, f"falha na geração da TDT: {e}")
+    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M")
+    fname = f"TDT_{alias}_{cfg.protocol}_revisada_{stamp}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(xlsx),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @app.get("/api/health")
 def health():
     try:
