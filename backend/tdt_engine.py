@@ -35,6 +35,9 @@ SIGLA_INDEX_PATH = DATA / "sigla_index.json"
 
 HEADER_ROWS = 4
 
+from openpyxl.styles import PatternFill as _PF
+_UNCERTAIN_FILL = _PF("solid", fgColor="FFF2CC")   # amarelo claro p/ linhas incertas
+
 # Presets de formato de comando (output) descobertos nas TDTs reais.
 # count = nº de coordenadas/control-codes; times = tempos de pulso.
 COMMAND_PRESETS = {
@@ -486,6 +489,7 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3", native: bool = 
     native=True → re-salva pelo MS Excel (formato aceito pelo ADMS)."""
     proto = PROTOCOLS.get(protocol, PROTOCOLS["dnp3"])
     index = json.loads(Path(proto["index"]).read_text(encoding="utf-8"))
+    uncertain = set(parsed.get("uncertain") or [])   # nomes a destacar (incertos)
     wb = openpyxl.load_workbook(proto["template"])
     report = {"discrete": {"matched": 0, "unmatched": []},
               "analog": {"matched": 0, "unmatched": []},
@@ -570,9 +574,12 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3", native: bool = 
                 row[idx_cid] = f"{alias}_{tag}_{custom_seq[k]:05d}"
 
             er = HEADER_ROWS + 1 + out_row
+            highlight = nome in uncertain
             for c in range(ncol):
                 cell = ws.cell(row=er, column=c + 1, value=row[c])
                 cell._style = copy(styles[c])
+                if highlight:                       # destaca incertos — SÓ a cor da linha
+                    cell.fill = _UNCERTAIN_FILL
             out_row += 1
             report[klass]["matched"] += 1
 

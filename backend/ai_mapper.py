@@ -361,6 +361,13 @@ _SEMANTIC_RULES: list[tuple[str, str]] = [
     (r'POT.*REATIVA',                      'Q'),   # antes de ATIVA (REATIVA contém ATIVA)
     (r'POT.*ATIVA',                        'P'),
     (r'POT.*APARENTE',                     'S'),
+    (r'TEMPERATURA.*OLEO|OLEO.*TEMPERATURA',  'TOLE'),
+    (r'TEMPERATURA.*ENROLAMENTO',          'TENR'),
+    (r'TEMPERATURA.*AMBIENTE',             'TPAM'),
+    (r'FATOR.*POTENCIA|\bFP\b',            'FP'),
+    (r'ANGULO',                            'ANG'),
+    (r'\bUMIDADE\b',                       'UMID'),
+    (r'CORRENTE.*FUGA|\bFUGA\b',           'FUGA'),
     (r'FREQUENCIA',                        'F'),
     (r'TAP|COMUTADOR',                     'TAP'),
 ]
@@ -849,8 +856,10 @@ def _add_to_lista(discrete, analog, da, sigla, nome, stype, addr, aor):
 
 def to_lista_resumida(mapped: list[MappedSignal], alias: str,
                       min_confidence: int = 60) -> dict:
-    """Converte sinais mapeados → formato de generate_tdt_from_list (filtra por confiança)."""
+    """Converte sinais mapeados → formato de generate_tdt_from_list (filtra por confiança).
+    Marca como INCERTO (destaque na TDT) tudo que não for ALTA."""
     discrete, analog, da = [], [], []
+    uncertain: set = set()
     for m in mapped:
         if not m.sigla or m.confidence < min_confidence:
             continue
@@ -858,8 +867,10 @@ def to_lista_resumida(mapped: list[MappedSignal], alias: str,
         nome = f"{alias}_{module}_{module}_{m.sigla}"
         _add_to_lista(discrete, analog, da, m.sigla, nome, m.signal_type,
                       m.dnp3_addr, f"{alias} Distr")
+        if m.confidence_label != 'ALTA':
+            uncertain.add(nome)
     return {'discrete': discrete, 'analog': analog,
-            'discrete_analog': da, 'inputErrors': []}
+            'discrete_analog': da, 'inputErrors': [], 'uncertain': uncertain}
 
 
 def reviewed_to_lista(signals: list[dict], alias: str) -> dict:

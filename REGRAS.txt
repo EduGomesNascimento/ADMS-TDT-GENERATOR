@@ -1,0 +1,93 @@
+==============================================================================
+ MOTOR DE REGRAS — MAPEAMENTO DETERMINISTICO (SEM IA)
+ Lista de todas as regras usadas para mapear DESCRICAO/NOME -> SIGLA ADMS.
+ Arquivo gerado para auditoria. Fonte: backend/ai_mapper.py
+==============================================================================
+
+ORDEM DAS CAMADAS (da mais forte/confiavel a mais fraca):
+  1. TOKEN .............. codigo ADMS embutido no nome (ALIAS_MOD_DEV_SIGLA)   -> ALTA 100
+  2. SEMANTICO .......... medicoes comuns por descricao (regras abaixo)         -> ALTA 92
+  3. BASE OFICIAL ....... descricao exata = Pontos Padrao ADMS v1               -> ALTA 94
+  4. DESCRICAO EXATA .... descricao = descricao do indice                       -> ALTA 96
+  5. PROTECAO ........... funcao de protecao por palavra-chave (regras abaixo)  -> MEDIA 82
+  6. FUZZY ANSI ......... codigo ANSI (50/51/87..) + sobreposicao de descricao  -> MEDIA/BAIXA <=78
+  7. IA (opcional) ...... so o que as regras NAO acharam; Groq/Gemini/local     -> MEDIA <=85
+  -- sem match -> SEM (fica para revisao humana)
+
+REGRA DE CONFIABILIDADE:
+  - Apenas as camadas 1-4 (deterministicas exatas) marcam ALTA.
+  - Protecao/Fuzzy/IA marcam no maximo MEDIA -> SEMPRE revisar.
+  - SIGLA de 1 caractere (A/B/D/F) e REJEITADA em token/fuzzy (falso positivo).
+  - Toda regra exige que a SIGLA EXISTA no indice (sigla in sigla_flat) e que o
+    TIPO bata (analogico so casa com analogico; comando conta como discreto).
+
+------------------------------------------------------------------------------
+ NORMALIZACAO (_norm) — aplicada a TODA descricao antes de comparar
+------------------------------------------------------------------------------
+  - MAIUSCULAS, espacos colapsados.
+  - Remove acentos: A A A A E E I O O O U C (ortografia sem acento).
+  - Expande abreviacoes (palavra inteira):
+      DISJ->DISJUNTOR   SEC/SECC->SECCIONADORA   TEMP->TEMPERATURA
+      POT->POTENCIA     CORR->CORRENTE           TENS->TENSAO
+      DESL/DESLIG->DESLIGAMENTO   ALM/ALARM->ALARME   RELIG->RELIGAMENTO
+      SUBTENS->SUBTENSAO  SOBRETENS->SOBRETENSAO  SOBRECORR->SOBRECORRENTE
+      FREQ->FREQUENCIA   ENROL->ENROLAMENTO      PRES->PRESSAO
+      SINAL->SINALIZACAO COMUT->COMUTADOR        PROT->PROTECAO
+
+------------------------------------------------------------------------------
+ CAMADA 2 — SEMANTICO (analogicos; regex sobre a descricao normalizada)
+ Ordem importa (1o que casar vence). REATIVA antes de ATIVA (REATIVA contem ATIVA).
+------------------------------------------------------------------------------
+  TENSAO ..AB  | VAB        TENSAO ..BC | VBC        TENSAO ..CA | VCA
+  TENSAO FASE A| VA         TENSAO FASE B| VB        TENSAO FASE C| VC
+  CORRENTE NEUTRO/RESIDUAL | IN
+  CORRENTE FASE A| IA       CORRENTE FASE B| IB      CORRENTE FASE C| IC
+  POTENCIA REATIVA | Q      POTENCIA ATIVA | P       POTENCIA APARENTE | S
+  TEMPERATURA OLEO | TOLE   TEMPERATURA ENROLAMENTO | TENR
+  TEMPERATURA AMBIENTE | TPAM
+  FATOR DE POTENCIA / FP | FP
+  ANGULO | ANG             UMIDADE | UMID           CORRENTE FUGA | FUGA
+  FREQUENCIA | F           TAP / COMUTADOR | TAP
+
+------------------------------------------------------------------------------
+ CAMADA 5 — PROTECAO (discretos/comandos; palavra-chave -> SIGLA de funcao ANSI)
+ Family-match: a funcao e certa mas o vao pode variar -> confianca MEDIA.
+------------------------------------------------------------------------------
+  SUBTENSAO | 27_T            SOBRETENSAO | 59           RELIGAMENTO | 79
+  BLOQUEIO / LOCKOUT | 86     SEQUENCIA NEGATIVA | 46    DIFERENCIAL | 87
+  86BF / FALHA DISJUNTOR / BREAKER FAILURE | 86BF
+  BUCHHOLZ | 63TD            20/VALVULA/ALIVIO PRESSAO | 20A
+  BAIXA PRESSAO SF6 / SF6 ALARME | SF6A
+  MOLA (CARREG/DESCARR) | MOLA
+  LOCAL/REMOTO | 43LR        TELECOMANDO / 43TC | 43TC
+
+------------------------------------------------------------------------------
+ CAMADA 6 — FUZZY ANSI (determinstico, reproduzivel)
+------------------------------------------------------------------------------
+  - Extrai codigos ANSI (2 digitos: 20-99) da descricao e do nome.
+  - Candidatos = SIGLAs que compartilham >=1 token de descricao (indice invertido).
+  - Pontuacao = Jaccard(tokens)*58 + (codigos ANSI em comum)*20.
+  - Penaliza 0.55 se a descricao tem codigo mas o SIGLA nao bate o codigo.
+  - Confianca = min(78, pontuacao); so aceita se >= 48.
+
+------------------------------------------------------------------------------
+ REFERENCIA — CODIGOS ANSI/IEEE DE FUNCAO (da doc ADMS)
+------------------------------------------------------------------------------
+  20=valvula alivio  26=temp oleo   49=imagem termica  50=sobrecorr instant
+  51=sobrecorr temp  52=disjuntor   59=sobretensao     63=buchholz/pressao
+  67=direcional      71=nivel oleo  79=religamento     86=bloqueio
+  87=diferencial     89=seccionadora  27=subtensao     46=seq negativa
+  25=sincronismo     81=frequencia  43LR=local/remoto  43TC=telecomando
+
+------------------------------------------------------------------------------
+ LISTA DE REGRAS A ADICIONAR (backlog — sobe o deterministico)
+------------------------------------------------------------------------------
+  [ ] 50/51 fase e neutro com estagio (50F1, 51F, 51N, 50N)
+  [ ] 67/67N direcional (A_67, P_67, 67N)
+  [ ] 25/25LR sincronismo/paralelismo
+  [ ] 81 frequencia (proteção) - sub/sobre
+  [ ] 26/49 temperatura (alarme x desligamento) -> 2649/TOEA/TOED
+  [ ] estados de chave: ABERTO/FECHADO -> status; ABRIR/FECHAR -> comando
+  [ ] DE->PARA: aplicar 101 mapeamentos legado->novo (90->R90, 27_1->27E1...)
+  [ ] mapa de vaos por subestacao (resolve 52-2 vs 52-10) -> vira ALTA
+==============================================================================
