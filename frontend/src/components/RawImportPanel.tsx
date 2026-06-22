@@ -20,6 +20,8 @@ interface MappedSignal {
   confidence: number;
   confidenceLabel: "ALTA" | "MÉDIA" | "BAIXA" | "SEM";
   matchMethod: string;
+  sourceSheet?: string;
+  candidates?: { sigla: string; desc: string; score: number }[];
 }
 
 interface RawPreview {
@@ -473,54 +475,80 @@ export function RawImportPanel({ onBack }: Props) {
             </div>
             <p className="mb-2 text-xs text-slate-500">
               A SIGLA já vem <strong className="text-slate-300">pré-marcada</strong>. Confira os{" "}
-              <strong className="text-amber-400">amarelos/vermelhos</strong>; clique na célula SIGLA para corrigir (autocomplete), ou apague para excluir o sinal.
+              <strong className="text-amber-400">amarelos/vermelhos</strong>; clique num{" "}
+              <strong className="text-brand-300">candidato</strong> para escolher, digite outra SIGLA, ou apague para excluir.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-left text-slate-400 border-b border-slate-700/50">
-                    <th className="pb-2 pr-3 font-semibold">Módulo</th>
-                    <th className="pb-2 pr-3 font-semibold">Descrição (campo)</th>
-                    <th className="pb-2 pr-3 font-semibold">SIGLA ADMS ✎</th>
-                    <th className="pb-2 pr-3 font-semibold">Descrição ADMS</th>
-                    <th className="pb-2 pr-3 font-semibold">DNP3</th>
+                    <th className="pb-2 pr-2 font-semibold">Aba</th>
+                    <th className="pb-2 pr-2 font-semibold">Módulo</th>
+                    <th className="pb-2 pr-2 font-semibold">Tipo</th>
+                    <th className="pb-2 pr-2 font-semibold">Descrição (campo)</th>
+                    <th className="pb-2 pr-2 font-semibold">DNP3</th>
+                    <th className="pb-2 pr-2 font-semibold">SIGLA escolhida ✎ + candidatos</th>
                     <th className="pb-2 font-semibold">Conf.</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {displayed.map(({ m, idx }) => (
+                  {displayed.map(({ m, idx }) => {
+                    const cur = edits[idx] ?? m.sigla ?? "";
+                    const tipo = m.signalType === "analog" ? "A" : m.signalType === "command" ? "C" : "D";
+                    return (
                     <tr
                       key={idx}
                       className={clsx(
-                        "border-l-2",
+                        "border-l-2 align-top",
                         m.confidenceLabel === "ALTA"  && "border-l-emerald-600",
                         m.confidenceLabel === "MÉDIA" && "border-l-amber-500",
                         m.confidenceLabel === "BAIXA" && "border-l-red-500",
                         m.confidenceLabel === "SEM"   && "border-l-slate-700",
                       )}
                     >
-                      <td className="py-1.5 pr-3 text-slate-400">{m.module}</td>
-                      <td className="py-1.5 pr-3 text-slate-300 max-w-[200px] truncate" title={m.description}>{m.description}</td>
-                      <td className="py-1 pr-3">
+                      <td className="py-1.5 pr-2 text-slate-500 max-w-[80px] truncate" title={m.sourceSheet}>{m.sourceSheet || '—'}</td>
+                      <td className="py-1.5 pr-2 text-slate-400">{m.module}</td>
+                      <td className="py-1.5 pr-2 font-mono text-slate-500">{tipo}</td>
+                      <td className="py-1.5 pr-2 text-slate-300 max-w-[220px]" title={m.description}>{m.description}</td>
+                      <td className="py-1.5 pr-2 font-mono text-slate-400">{m.dnp3Addr ?? '—'}</td>
+                      <td className="py-1 pr-2">
                         <input
                           list="siglaOpts"
-                          value={edits[idx] ?? m.sigla ?? ""}
+                          value={cur}
                           onChange={(e) => setEdits((p) => ({ ...p, [idx]: e.target.value.toUpperCase() }))}
                           placeholder="—"
                           className={clsx(
-                            "w-28 rounded border bg-slate-800/80 px-1.5 py-1 font-mono text-xs focus:border-brand-500 focus:outline-none",
-                            (edits[idx] ?? m.sigla) ? "border-slate-700 text-brand-300" : "border-red-700/50 text-slate-500",
+                            "w-32 rounded border bg-slate-800/80 px-1.5 py-1 font-mono text-xs focus:border-brand-500 focus:outline-none",
+                            cur ? "border-slate-700 text-brand-300" : "border-red-700/50 text-slate-500",
                             edits[idx] !== undefined && "border-amber-500/60",
                           )}
                         />
+                        {m.siglaDesc && <div className="mt-0.5 text-[10px] text-slate-500 max-w-[200px] truncate" title={m.siglaDesc}>{m.siglaDesc}</div>}
+                        {(m.candidates && m.candidates.length > 0) && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {m.candidates.slice(0, 5).map((c) => (
+                              <button
+                                key={c.sigla}
+                                title={`${c.desc} · ${c.score}%`}
+                                onClick={() => setEdits((p) => ({ ...p, [idx]: c.sigla }))}
+                                className={clsx(
+                                  "rounded px-1.5 py-0.5 font-mono text-[10px] transition",
+                                  cur === c.sigla
+                                    ? "bg-brand-600 text-white"
+                                    : "bg-slate-700/60 text-slate-300 hover:bg-slate-600",
+                                )}
+                              >
+                                {c.sigla}<span className="ml-1 opacity-60">{c.score}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </td>
-                      <td className="py-1.5 pr-3 text-slate-400 max-w-[160px] truncate" title={m.siglaDesc || ''}>{m.siglaDesc || ''}</td>
-                      <td className="py-1.5 pr-3 font-mono text-slate-400">{m.dnp3Addr ?? '—'}</td>
                       <td className={clsx("py-1.5 font-semibold", CONF_BADGE[m.confidenceLabel])}>
                         {m.confidence > 0 ? `${m.confidence}%` : '—'}
                       </td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             </div>

@@ -46,6 +46,8 @@ class MappedSignal:
     confidence_label: str = "SEM"   # ALTA | MÉDIA | BAIXA | SEM
     alternative: Optional[str] = None
     match_method: str = "none"
+    candidates: list = field(default_factory=list)   # top-N p/ o usuário escolher
+    source_sheet: str = ""
 
 # ─── Parsing de Excel ────────────────────────────────────────────────────────
 
@@ -402,6 +404,11 @@ _PROT_RULES: list[tuple[str, str]] = [
     (r'\bMOLA\b.*(CARREG|DESCARR)|MOLA DO DISJUNTOR', 'MOLA'),
     (r'LOCAL.*REMOTO|REMOTO.*LOCAL|\b43LR\b', '43LR'),
     (r'TELECOMANDO|\b43TC\b',            '43TC'),
+    (r'FALHA.*COMUNICACAO|COMUNICACAO.*FALHA|\bFCOM\b', 'FCOM'),
+    (r'\b86\b.*ATUAD|\b86\b.*BLOQUEIO|\b86FD\b', '86'),
+    (r'\b50BF\b|\b62BF\b|FALHA.*DISJUNTOR', '50BF'),
+    (r'\bMOLA\b', 'MOLA'),
+    (r'\bSF6\b', 'SF6A'),
 ]
 _PROT_COMPILED = [(re.compile(p), s) for p, s in _PROT_RULES]
 
@@ -555,6 +562,37 @@ def _fuzzy_match(sig, sigla_flat: dict, inv: dict, det: dict,
     if best and best_conf >= min_conf:
         return best, best_conf
     return None
+
+
+def _rank_candidates(sig, sigla_flat: dict, inv: dict, det: dict, top: int = 6) -> list[dict]:
+    """Lista os top-N SIGLAs candidatos para o sinal (score determinístico).
+    Serve para o usuário ESCOLHER na revisão, mesmo quando não houve match firme."""
+    st = 'discrete' if sig.signal_type == 'command' else sig.signal_type
+    raw_tokens = _desc_tokens(sig.description) | _desc_tokens(sig.utr_id)
+    raw_codes = _ansi_codes(sig.description) | _ansi_codes(sig.utr_id)
+    if not raw_tokens:
+        return []
+    cand: dict = {}
+    for t in raw_tokens:
+        for sg in inv.get(t, ()):
+            if len(sg) <= 1:
+                continue
+            if st and sigla_flat[sg]['type'] != st:
+                continue
+            cand[sg] = cand.get(sg, 0) + 1
+    ranked = []
+    for sg, overlap in cand.items():
+        sg_tokens, sg_codes, _ = det[sg]
+        union = len(raw_tokens | sg_tokens) or 1
+        jac = overlap / union
+        cm = len(raw_codes & sg_codes)
+        score = jac * 58 + cm * 22
+        if raw_codes and cm == 0:
+            score *= 0.5
+        ranked.append({'sigla': sg, 'score': int(min(96, score)),
+                       'desc': sigla_flat[sg]['desc']})
+    ranked.sort(key=lambda x: -x['score'])
+    return ranked[:top]
 
 # ─── Backend LLM ─────────────────────────────────────────────────────────────
 
@@ -816,7 +854,7 @@ def map_signals(
         ms = MappedSignal(
             utr_id=sig.utr_id, description=sig.description,
             dnp3_addr=sig.dnp3_addr, signal_type=sig.signal_type,
-            module=sig.module,
+            module=sig.module, source_sheet=getattr(sig, 'source_sheet', ''),
         )
         if match:
             sigla, conf, method = match
@@ -825,6 +863,8 @@ def map_signals(
             ms.confidence = conf
             ms.confidence_label = _label(conf)
             ms.match_method = method
+        # candidatos para a tela de revisão (sempre, p/ o usuário escolher)
+        ms.candidates = _rank_candidates(sig, sigla_flat, inv, det)
         mapped.append(ms)
 
     matched = sum(1 for m in mapped if m.sigla)

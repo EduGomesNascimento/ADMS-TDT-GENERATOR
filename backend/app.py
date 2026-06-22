@@ -378,6 +378,8 @@ async def raw_preview(
                 'confidence': m.confidence,
                 'confidenceLabel': m.confidence_label,
                 'matchMethod': m.match_method,
+                'sourceSheet': m.source_sheet,
+                'candidates': m.candidates,   # [{sigla, desc, score}] p/ escolher
             }
             for m in mapped
         ],
