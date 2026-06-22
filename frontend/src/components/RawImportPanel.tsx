@@ -57,11 +57,10 @@ const CONF_BADGE: Record<string, string> = {
   SEM:   "text-slate-500",
 };
 
+// Apenas OFFLINE/LOCAL — a ferramenta funciona sem internet.
 const PROVIDERS = [
-  { value: "groq",   label: "Groq / Llama 3.3 70B (grátis, recomendado)", model: "llama-3.3-70b-versatile", hint: "Rápido e preciso. Chave grátis em console.groq.com — env: GROQ_API_KEY" },
-  { value: "gemini", label: "Gemini 2.5 Flash (grátis)",     model: "gemini-2.5-flash",      hint: "Grátis em aistudio.google.com (250K tokens/min, 20 req/dia). Para mais volume use gemini-3.1-flash-lite (500/dia). NÃO use gemini-2.0-flash (cota zero)." },
-  { value: "ollama", label: "Ollama (local, grátis, offline)", model: "qwen2.5:7b",               hint: "100% offline mas LENTO sem GPU. Em PC sem placa de vídeo, prefira o Groq. Requer 'ollama pull qwen2.5:7b'." },
-  { value: "none",   label: "Só heurística (sem IA)",         model: "",                        hint: "Sem IA — token + semântico (~57%). Instantâneo e offline." },
+  { value: "none",   label: "Sem IA — motor de regras (recomendado, offline)", model: "",          hint: "100% offline, reprodutível e sem limite. Mapeamento determinístico + escolha de candidatos na revisão. Não precisa de internet nem chave." },
+  { value: "ollama", label: "IA local (Ollama, offline)",      model: "qwen2.5:7b",                hint: "Scan final OPCIONAL, 100% local. Requer Ollama instalado e 'ollama pull qwen2.5:7b'. Lento sem GPU. Nenhum dado sai da máquina." },
 ];
 
 function downloadBlob(blob: Blob, filename: string) {
