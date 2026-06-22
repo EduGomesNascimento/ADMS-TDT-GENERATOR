@@ -108,8 +108,10 @@ def _infer_type(desc: str, sheet_name: str) -> str:
     return 'discrete'
 
 
-def _scan_grid(ws, max_rows: int = 3000, max_cols: int = 30):
-    """Lê a grade da sheet (read_only-friendly) numa matriz de valores."""
+def _scan_grid(ws, max_rows: int = 200000, max_cols: int = 60):
+    """Lê a grade da sheet INTEIRA (read_only-friendly) numa matriz de valores.
+    Limites altos só como salvaguarda contra arquivos corrompidos — na prática
+    lê todas as linhas/colunas relevantes da lista de pontos."""
     grid = []
     for r, row in enumerate(ws.iter_rows(values_only=True)):
         if r >= max_rows:
@@ -260,34 +262,32 @@ def parse_raw_excel(data: bytes) -> tuple[list[RawSignal], str]:
     wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     alias = _detect_alias(wb)
 
-    preferred = [n for n in wb.sheetnames if _PREFER_SHEETS.search(n)]
-    others    = [n for n in wb.sheetnames if n not in preferred and not _SKIP_SHEETS.search(n)]
+    # Lê TODAS as abas relevantes (não pula nenhuma) — só descarta abas-lixo
+    # (Capa, Slot, Índice, etc.). NÃO é "preferidas OU outras": é TODAS.
+    sheets = [n for n in wb.sheetnames if not _SKIP_SHEETS.search(n)]
 
     signals: list[RawSignal] = []
-    seen: set[str] = set()
+    seen: set = set()       # dedup por TUPLA COMPLETA (só remove linha 100% idêntica)
 
-    def process(sheet_names):
-        for sn in sheet_names:
-            # só força o tipo se a aba for explicitamente analógica/discreta;
-            # senão deixa _infer_type decidir por linha (sheets mistas).
-            if _ANALOG_SHEETS.search(sn):
-                default = 'analog'
-            elif re.search(r'discret|digita', sn, re.I):
-                default = 'discrete'
-            else:
-                default = None
-            for sig in _extract_sheet(wb[sn], sn, default):
-                if sig.utr_id not in seen:
-                    seen.add(sig.utr_id)
-                    signals.append(sig)
+    for sn in sheets:
+        # só força o tipo se a aba for explicitamente analógica/discreta;
+        # senão deixa _infer_type decidir por linha (sheets mistas).
+        if _ANALOG_SHEETS.search(sn):
+            default = 'analog'
+        elif re.search(r'discret|digita', sn, re.I):
+            default = 'discrete'
+        else:
+            default = None
+        for sig in _extract_sheet(wb[sn], sn, default):
+            key = (sn, sig.module, sig.signal_type, sig.description, sig.dnp3_addr, sig.utr_id)
+            if key not in seen:           # dedup só de linhas EXATAMENTE iguais
+                seen.add(key)
+                signals.append(sig)
 
-    process(preferred if preferred else others)
-    if not signals:
-        process(others if preferred else [])
-
+    total_sheets = len(wb.sheetnames)
     wb.close()
-    log.info("parse_raw_excel: %d sinais de %d abas; alias='%s'",
-             len(signals), len(preferred or others), alias)
+    log.info("parse_raw_excel: %d sinais de %d abas (de %d); alias='%s'",
+             len(signals), len(sheets), total_sheets, alias)
     return signals, alias
 
 # ─── Carrega sigla_index ─────────────────────────────────────────────────────
