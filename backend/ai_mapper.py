@@ -56,7 +56,7 @@ _MODULE_RE   = re.compile(r'mód|módulo|modulo|module|bay|vão', re.I)
 _UTR_ID_RE   = re.compile(r'identif|ponto.?na.?utr|utr.?id|ident\.', re.I)
 _DNP3_RE     = re.compile(r'dnp\s*3\.?0?\b|endereço.?dnp|index.?dnp', re.I)
 _DESC_RE     = re.compile(r'descriç|descric|description|nome|designaç', re.I)
-_SKIP_SHEETS = re.compile(r'^(capa|calculados?|slot|saca|sumário|config|setup|cron)', re.I)
+_SKIP_SHEETS = re.compile(r'^(capa|calculados?|saca|sumário|config|setup|cron)', re.I)
 _PREFER_SHEETS = re.compile(r'^(digitais|analogicos|analógicos|discretos)', re.I)
 _ANALOG_SHEETS = re.compile(r'^(analóg|analog)', re.I)
 
@@ -235,6 +235,9 @@ def _extract_sheet(ws, sheet_name: str, default_type: Optional[str] = None) -> l
         description = str(cell('desc')).strip() if cell('desc') else ''
         module = str(cell('module')).strip() if cell('module') else ''
         dnp3 = _parse_dnp3(cell('dnp3'))
+        # ignora linha vazia (slot de I/O não usado): sem descrição e sem módulo
+        if not description and not module:
+            continue
 
         sig_type = default_type or _infer_type(description, sheet_name)
         signals.append(RawSignal(utr_id=utr_id, description=description,
