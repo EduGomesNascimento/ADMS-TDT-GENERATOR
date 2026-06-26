@@ -54,7 +54,7 @@ class MappedSignal:
 
 _MODULE_RE   = re.compile(r'mód|módulo|modulo|module|bay|vão', re.I)
 _UTR_ID_RE   = re.compile(r'identif|ponto.?na.?utr|utr.?id|ident\.', re.I)
-_DNP3_RE     = re.compile(r'dnp3?\.?0?$|endereço.?dnp|index.?dnp', re.I)
+_DNP3_RE     = re.compile(r'dnp\s*3\.?0?\b|endereço.?dnp|index.?dnp', re.I)
 _DESC_RE     = re.compile(r'descriç|descric|description|nome|designaç', re.I)
 _SKIP_SHEETS = re.compile(r'^(capa|calculados?|slot|saca|sumário|config|setup|cron)', re.I)
 _PREFER_SHEETS = re.compile(r'^(digitais|analogicos|analógicos|discretos)', re.I)
@@ -93,7 +93,7 @@ def _parse_dnp3(raw) -> Optional[int]:
         return None
     try:
         v = int(float(str(raw)))
-        return v if 1 <= v <= 99_999 else None
+        return v if 0 <= v <= 99_999 else None   # índice DNP3 começa em 0
     except (ValueError, TypeError):
         return None
 
@@ -140,19 +140,21 @@ def _find_utr_column(grid) -> Optional[tuple[int, int]]:
 
 
 def _find_header_above(grid, data_start: int, n_cols: int) -> dict:
-    """Procura a linha de cabeçalho logo acima do 1º dado (mais rótulos de texto)
-    e mapeia as colunas module/desc/dnp3."""
-    best_idx, best_score = None, 0
-    for r in range(max(0, data_start - 1), -1, -1):
-        if data_start - r > 6:
-            break
-        labels = grid[r]
-        score = sum(1 for v in labels if isinstance(v, str) and len(v.strip()) > 2)
-        if score > best_score:
-            best_score, best_idx = score, r
-    if best_idx is None:
-        return {}
-    return _map_columns(grid[best_idx][:n_cols])
+    """Mapeia as colunas module/desc/dnp3 a partir do cabeçalho acima do 1º dado.
+
+    O cabeçalho costuma ser MULTI-LINHA (ex.: 'DNP3' fica numa linha superior
+    enquanto 'Módulo'/'Descrição' ficam na linha de baixo). Por isso MESCLAMOS
+    todas as linhas da janela de cabeçalho por coluna antes de detectar — senão a
+    coluna de índice DNP3, que mora numa linha separada, é perdida."""
+    lo = max(0, data_start - 6)
+    merged = [''] * n_cols
+    for r in range(lo, data_start):
+        row = grid[r]
+        for c in range(min(n_cols, len(row))):
+            v = row[c]
+            if isinstance(v, str) and v.strip():
+                merged[c] = (merged[c] + ' ' + v.strip()).strip()
+    return _map_columns(merged)
 
 
 _TIPO_MAP = {'A': 'analog', 'D': 'discrete', 'C': 'command',
@@ -925,40 +927,62 @@ def _module_token(m: 'MappedSignal') -> str:
     return _clean_token(getattr(m, 'source_sheet', '')) or _clean_token(m.module) or 'XX'
 
 
+def _resolve_index(addr, stype: str, seq: dict, start) -> object:
+    """Índice DNP3 do sinal. Usa o endereço REAL da lista quando presente (numérico).
+    Se ausente: deixa em branco por padrão (start=None) — evita colidir com os índices
+    reais; OU auto-sequencia por grupo a partir de `start` quando explicitamente pedido
+    (start=int), útil p/ listas que de fato não trazem índice."""
+    s = str(addr).strip() if addr not in (None, '') else ''
+    if s.lstrip('-').isdigit():
+        return int(s)
+    if start is None:
+        return ''
+    key = {'command': 'co', 'analog': 'ai', 'discrete_analog': 'da'}.get(stype, 'di')
+    v = seq.get(key, start)
+    seq[key] = v + 1
+    return v
+
+
 def to_lista_resumida(mapped: list[MappedSignal], alias: str,
-                      min_confidence: int = 60) -> dict:
+                      min_confidence: int = 60, index_start=None) -> dict:
     """Converte sinais mapeados → formato de generate_tdt_from_list (filtra por confiança).
-    Marca como INCERTO (destaque na TDT) tudo que não for ALTA."""
+    Marca como INCERTO (destaque na TDT) tudo que não for ALTA.
+    index_start: início da auto-sequência de índice DNP3 (quando a lista não traz)."""
     alias = _clean_token(alias) or 'XX'
     discrete, analog, da = [], [], []
     uncertain: set = set()
     seen: dict = {}
+    seq: dict = {}
     for m in mapped:
         if not m.sigla or m.confidence < min_confidence:
             continue
         module = _module_token(m)
         nome = _unique_name(seen, alias, module, m.sigla)
+        addr = _resolve_index(m.dnp3_addr, m.signal_type, seq, index_start)
         _add_to_lista(discrete, analog, da, m.sigla, nome, m.signal_type,
-                      m.dnp3_addr, 'Distr')
+                      addr, 'Distr')
         if m.confidence_label != 'ALTA':
             uncertain.add(nome)
     return {'discrete': discrete, 'analog': analog,
             'discrete_analog': da, 'inputErrors': [], 'uncertain': uncertain}
 
 
-def reviewed_to_lista(signals: list[dict], alias: str) -> dict:
+def reviewed_to_lista(signals: list[dict], alias: str, index_start=None) -> dict:
     """Converte os sinais REVISADOS pelo usuário (cada um já com a SIGLA confirmada)
-    → formato de generate_tdt_from_list. Sem filtro de confiança (já confirmado)."""
+    → formato de generate_tdt_from_list. Sem filtro de confiança (já confirmado).
+    index_start: início da auto-sequência de índice DNP3 (quando a lista não traz)."""
     alias = _clean_token(alias) or 'XX'
     discrete, analog, da = [], [], []
     seen: dict = {}
+    seq: dict = {}
     for s in signals:
         sig = (s.get('sigla') or '').strip()
         if not sig:
             continue
         module = _clean_token(s.get('sourceSheet') or s.get('module')) or 'XX'
         nome = _unique_name(seen, alias, module, sig)
-        _add_to_lista(discrete, analog, da, sig, nome,
-                      s.get('signalType', 'discrete'), s.get('dnp3Addr'), 'Distr')
+        stype = s.get('signalType', 'discrete')
+        addr = _resolve_index(s.get('dnp3Addr'), stype, seq, index_start)
+        _add_to_lista(discrete, analog, da, sig, nome, stype, addr, 'Distr')
     return {'discrete': discrete, 'analog': analog,
             'discrete_analog': da, 'inputErrors': []}
