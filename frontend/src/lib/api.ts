@@ -28,6 +28,7 @@ export interface Signal {
   suffix: string;
   code?: string | null;
   group?: string | null;
+  occurrences?: number | null;   // nº de devices reais com este sinal (gama "Base Real")
   description: string;
   aliasLabel: string;
   klass: "discrete" | "analog" | "discrete_analog";

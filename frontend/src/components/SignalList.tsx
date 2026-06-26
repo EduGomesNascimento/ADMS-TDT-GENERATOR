@@ -112,6 +112,14 @@ export function SignalList({
                     {sig.group && (
                       <span className="rounded bg-slate-700/60 px-1.5 py-0.5 text-[10px] text-slate-300">{sig.group}</span>
                     )}
+                    {typeof sig.occurrences === "number" && sig.occurrences > 0 && (
+                      <span
+                        title={`Presente em ${sig.occurrences} equipamentos reais deste tipo na base`}
+                        className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-400"
+                      >
+                        ×{sig.occurrences}
+                      </span>
+                    )}
                     <span className="truncate text-sm text-slate-200">{sig.description}</span>
                     {sig.hasCommand && (
                       <span className="flex items-center gap-1 rounded bg-fuchsia-500/15 px-1.5 py-0.5 text-[10px] font-medium text-fuchsia-300">

@@ -39,6 +39,7 @@ def slim_signal(s):
         "suffix": s["suffix"],
         "code": s.get("code"),
         "group": s.get("group"),
+        "occurrences": s.get("occurrences"),
         "description": s["description"],
         "aliasLabel": s.get("aliasLabel", ""),
         "klass": s["klass"],

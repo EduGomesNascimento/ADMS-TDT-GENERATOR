@@ -33,27 +33,36 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 BASE = ROOT.parent.parent / "Export_base_Full__27_fev_2026.xlsx"
 
-COVER_MIN = 0.30      # device precisa cobrir >=30% da semente do tipo p/ ser daquele tipo
+MIN_OVERLAP = 5       # device precisa partilhar >=5 sinais com a semente do tipo
 SEED_MIN = 4          # objid precisa ter >=4 sufixos p/ classificar (evita ruído)
 NAME_COL = 0
 AOR_COL = 5
+CACHE = None          # data/_devices_cache.json — evita re-escanear a base (8 min)
 
 SHEETS = [("DNP3_DiscreteSignals", "discrete"), ("DNP3_AnalogSignals", "analog")]
 
 
-def _suffix(name: str) -> str | None:
-    """objid_suffix → suffix (tudo após o 1º '_')."""
-    i = name.find("_")
-    return name[i + 1:] if i > 0 and i < len(name) - 1 else None
+def _split(name: str, known: set) -> tuple[str, str | None]:
+    """Separa (device_prefix, suffix) usando o vocabulário conhecido de sufixos.
+
+    A base é MISTA: nomes `1212973_50F1` (objid numérico) e `FWB_AL13_52-13_50F1`
+    (estruturado) convivem. Pega o sufixo CONHECIDO mais curto a partir da direita
+    (take=1 antes de 2,3) — assim `50F1` casa antes do poluído `52-13_50F1`.
+    """
+    parts = name.split("_")
+    for take in (1, 2, 3):
+        if len(parts) > take:
+            cand = "_".join(parts[-take:])
+            if len(cand) > 1 and cand in known:
+                return "_".join(parts[:-take]), cand
+    # fallback: device = tudo menos último token (sufixo desconhecido, ignorado)
+    if len(parts) >= 2:
+        return "_".join(parts[:-1]), None
+    return name, None
 
 
-def _objid(name: str) -> str:
-    i = name.find("_")
-    return name[:i] if i > 0 else name
-
-
-def scan_base():
-    """objid -> {'discrete': set(suffix), 'analog': set(suffix), 'aor': Counter}."""
+def scan_base(known: set):
+    """device_prefix -> {'discrete': set(suffix), 'analog': set(suffix), aor counters}."""
     wb = openpyxl.load_workbook(BASE, read_only=True, data_only=True)
     devices = defaultdict(lambda: {"discrete": set(), "analog": set(), "distr": 0, "trans": 0})
     for sheet, klass in SHEETS:
@@ -63,10 +72,9 @@ def scan_base():
             if not row or not row[NAME_COL]:
                 continue
             name = str(row[NAME_COL])
-            suf = _suffix(name)
+            oid, suf = _split(name, known)
             if not suf:
                 continue
-            oid = _objid(name)
             d = devices[oid]
             d[klass].add(suf)
             aor = row[AOR_COL] if len(row) > AOR_COL else None
@@ -90,37 +98,74 @@ def main():
     known = {"discrete": idx["DNP3_DiscreteSignals"], "analog": idx["DNP3_AnalogSignals"]}
 
     # --- sementes: sufixos genuinamente aprendidos (não os despejados "Padrão ADMS") ---
+    EXPANDED = ("Padrão ADMS", "Base Real")   # grupos adicionados por scripts (não-aprendidos)
+    known_all = set(known["discrete"]) | set(known["analog"])
+
+    def real_code(suf: str) -> str | None:
+        """Código real de um sufixo de semente (ignora placeholders e caminho de
+        sub-módulo): 'TR1AT_52-2_43LR'→'43LR', '<<MODULE>>_52-2_81'→'81'."""
+        parts = [p for p in suf.split("_") if not p.startswith("<<")]
+        for take in (1, 2):
+            if len(parts) >= take:
+                cand = "_".join(parts[-take:])
+                if len(cand) > 1 and cand in known_all:
+                    return cand
+        return parts[-1] if parts else None
+
+    # seeds = sufixos aprendidos (p/ expandir); seed_real = códigos reais (p/ casar na base)
     seeds = {}
+    seed_real = {}
+    expandable = {}
     for d in cat["deviceTypes"]:
         seed = {"discrete": set(), "analog": set()}
         for klass in ("discrete", "analog"):
             for s in d["signals"].get(klass, []):
-                if s.get("group") != "Padrão ADMS":   # só os aprendidos da TDT-fonte
+                if s.get("group") not in EXPANDED:
                     seed[klass].add(s["suffix"])
         seeds[d["id"]] = seed
-        print(f'semente {d["id"]:18s} dig={len(seed["discrete"])} anl={len(seed["analog"])}')
+        all_suf = seed["discrete"] | seed["analog"]
+        real = {real_code(s) for s in all_suf}
+        real.discard(None)
+        seed_real[d["id"]] = real
+        # expansível só se a geração usa <<PREFIX>> simples (sufixos reais no índice).
+        # TR/linha são consolidados (sufixos = caminho de sub-módulo) → não expande,
+        # mas ainda classificam seus devices (via seed_real) p/ não poluir alimentador.
+        frac = len(all_suf & known_all) / max(len(all_suf), 1)
+        expandable[d["id"]] = frac >= 0.5
+        print(f'semente {d["id"]:18s} aprendidos={len(all_suf):3d} reais={len(real):3d} '
+              f'expansivel={expandable[d["id"]]}')
 
-    print("escaneando base completa (demora ~6 min)...")
-    devices = scan_base()
+    cache_path = DATA / "_devices_cache.json"
+    if cache_path.exists():
+        print(f"usando cache {cache_path.name} (sem re-escanear a base)...")
+        raw = json.loads(cache_path.read_text(encoding="utf-8"))
+        devices = {oid: {"discrete": set(v["discrete"]), "analog": set(v["analog"])}
+                   for oid, v in raw.items()}
+    else:
+        print("escaneando base completa (demora ~6 min)...")
+        devices = scan_base(known_all)
+        cache_path.write_text(json.dumps(
+            {oid: {"discrete": sorted(v["discrete"]), "analog": sorted(v["analog"])}
+             for oid, v in devices.items()}, ensure_ascii=False), encoding="utf-8")
+        print(f"cache salvo em {cache_path.name}")
 
     # --- classifica cada device físico ao tipo cuja semente ele mais cobre ---
     # acumula frequência de cada sufixo por tipo
     freq = {d["id"]: {"discrete": defaultdict(int), "analog": defaultdict(int)} for d in cat["deviceTypes"]}
     matched_devices = defaultdict(int)
+    seed_all = seed_real   # casa pelos CÓDIGOS REAIS (resolve TR/LT e des-incha alimentador)
     for oid, dev in devices.items():
-        total_suf = len(dev["discrete"]) + len(dev["analog"])
-        if total_suf < SEED_MIN:
+        dev_all = dev["discrete"] | dev["analog"]
+        if len(dev_all) < SEED_MIN:
             continue
-        best_type, best_score = None, 0.0
-        for tid, seed in seeds.items():
-            seed_all = seed["discrete"] | seed["analog"]
-            if not seed_all:
-                continue
-            dev_all = dev["discrete"] | dev["analog"]
-            cover = len(dev_all & seed_all) / len(seed_all)   # cobertura da semente
-            if cover > best_score:
-                best_score, best_type = cover, tid
-        if best_type and best_score >= COVER_MIN:
+        # overlap ABSOLUTO (nº de sinais partilhados) — não penaliza sementes grandes
+        # (TR/LT são consolidados, espalhados por vários objids físicos)
+        best_type, best_ov = None, 0
+        for tid, sall in seed_all.items():
+            ov = len(dev_all & sall)
+            if ov > best_ov:
+                best_ov, best_type = ov, tid
+        if best_type and best_ov >= MIN_OVERLAP:
             matched_devices[best_type] += 1
             for klass in ("discrete", "analog"):
                 for suf in dev[klass]:
@@ -133,9 +178,11 @@ def main():
         sig = d["signals"]
         for klass in ("discrete", "analog"):
             lst = sig.setdefault(klass, [])
-            # remove a expansão cega antiga ("Padrão ADMS") — mantém só os aprendidos
-            lst[:] = [s for s in lst if s.get("group") != "Padrão ADMS"]
+            # remove expansões anteriores ("Padrão ADMS"/"Base Real") — mantém aprendidos
+            lst[:] = [s for s in lst if s.get("group") not in EXPANDED]
             have = {s.get("suffix") for s in lst}
+            if not expandable[tid]:
+                continue   # TR/linha: consolidados, já ricos — não recebem sinais genéricos
             # candidatos = sufixos vistos em devices deste tipo, ordenados por frequência
             ranked = sorted(freq[tid][klass].items(), key=lambda kv: -kv[1])
             for suf, count in ranked:

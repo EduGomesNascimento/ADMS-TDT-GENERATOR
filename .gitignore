@@ -15,3 +15,5 @@ backend/data/*.prev.xlsx
 
 frontend/tsconfig.tsbuildinfo
 backend/uvicorn.log
+backend/data/_devices_cache.json
+catalog.backup.json
