@@ -185,6 +185,8 @@ def generate_tdt(config: dict, native: bool = True) -> bytes:
         seq_tag = "AS" if klass == "analog" else "DS"
         custom_seq = custom_start
         coord_seq = int(coord_start.get(klass, 0) or 0)
+        # auto-sequência ativa se houver coordStart global OU se um sinal marcar followFrom
+        coord_active = klass in coord_start
         cmd_seq = cmd_coord_start
 
         for offset, (sig, sel) in enumerate(items):
@@ -216,12 +218,20 @@ def generate_tdt(config: dict, native: bool = True) -> bytes:
                     row_vals[idx_rp_custom] = f"{alias}_{seq_tag}_{custom_seq:05d}"
                     custom_seq += 1
 
-            # Input Coordinates: override > auto-sequência > valor do template
+            # Input Coordinates: override manual > auto-sequência > valor do template
             if idx_in_coord is not None:
                 ic = sel.get("inputCoord")
                 if ic is not None and ic != "":
                     row_vals[idx_in_coord] = ic
-                elif "discrete" in coord_start or "analog" in coord_start:
+                    # "próximos sinais seguem a partir deste endereço": liga a
+                    # sequência a partir de ic+1 para os sinais seguintes
+                    if sel.get("followFrom"):
+                        try:
+                            coord_seq = int(ic) + 1
+                            coord_active = True
+                        except (ValueError, TypeError):
+                            pass
+                elif coord_active:
                     row_vals[idx_in_coord] = coord_seq
                     coord_seq += 1
                 # senão mantém o valor original tokenizado (numérico do template)

@@ -47,6 +47,8 @@ export default function App() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [cmdConfig, setCmdConfig] = useState<Record<string, CmdCfg>>({});
+  // índice manual por sinal: { coord, follow } — follow = "próximos seguem daqui"
+  const [idxConfig, setIdxConfig] = useState<Record<string, { coord: string; follow: boolean }>>({});
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [exporting, setExporting] = useState(false);
   const [excelWarn, setExcelWarn] = useState<string | null>(null);
@@ -112,6 +114,11 @@ export default function App() {
       const k = `${sheet}|${s.suffix}`;
       if (!selected.has(k)) return;
       const sel: SignalSel = { sheet, suffix: s.suffix };
+      const idx = idxConfig[k];
+      if (idx?.coord?.trim()) {
+        sel.inputCoord = idx.coord.trim();
+        if (idx.follow) sel.followFrom = true;
+      }
       if (s.hasCommand) {
         const cfg = cmdConfig[k];
         if (cfg?.format) sel.commandFormat = cfg.format;
@@ -187,6 +194,9 @@ export default function App() {
   }
   function onCmdChange(key: string, patch: Partial<CmdCfg>) {
     setCmdConfig((prev) => ({ ...prev, [key]: { ...(prev[key] || { format: "template", outputCoord: "" }), ...patch } }));
+  }
+  function onIdxChange(key: string, patch: Partial<{ coord: string; follow: boolean }>) {
+    setIdxConfig((prev) => ({ ...prev, [key]: { ...(prev[key] || { coord: "", follow: false }), ...patch } }));
   }
 
   const selCount = selected.size;
@@ -459,9 +469,11 @@ export default function App() {
                 signals={device.signals.discrete}
                 selected={selected}
                 cmdConfig={cmdConfig}
+                idxConfig={idxConfig}
                 onToggle={toggle}
                 onToggleMany={toggleMany}
                 onCmdChange={onCmdChange}
+                onIdxChange={onIdxChange}
               />
               <SignalList
                 title="Sinais Analógicos"
@@ -470,9 +482,11 @@ export default function App() {
                 signals={device.signals.analog}
                 selected={selected}
                 cmdConfig={cmdConfig}
+                idxConfig={idxConfig}
                 onToggle={toggle}
                 onToggleMany={toggleMany}
                 onCmdChange={onCmdChange}
+                onIdxChange={onIdxChange}
               />
               {device.signals.discrete_analog && device.signals.discrete_analog.length > 0 && (
                 <div className="lg:col-span-2">
@@ -483,9 +497,11 @@ export default function App() {
                     signals={device.signals.discrete_analog}
                     selected={selected}
                     cmdConfig={cmdConfig}
+                    idxConfig={idxConfig}
                     onToggle={toggle}
                     onToggleMany={toggleMany}
                     onCmdChange={onCmdChange}
+                    onIdxChange={onIdxChange}
                   />
                 </div>
               )}

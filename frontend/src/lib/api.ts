@@ -46,6 +46,7 @@ export interface SignalSel {
   sheet: string;
   suffix: string;
   inputCoord?: number | string | null;
+  followFrom?: boolean;       // "próximos sinais seguem a partir deste endereço"
   customId?: string | null;
   commandFormat?: string | null;
   outputCoord?: number | string | null;

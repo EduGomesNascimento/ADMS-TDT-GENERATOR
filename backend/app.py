@@ -99,6 +99,7 @@ class SignalSel(BaseModel):
     sheet: str
     suffix: str
     inputCoord: int | str | None = None
+    followFrom: bool = False     # "próximos sinais seguem a partir deste endereço"
     customId: str | None = None
     commandFormat: str | None = None
     outputCoord: int | str | None = None
@@ -143,6 +144,7 @@ def preview(cfg: ExportConfig):
     seq = {"DNP3_DiscreteSignals": int(cfg.customIdStart or 1),
            "DNP3_AnalogSignals": int(cfg.customIdStart or 1)}
     coord_seq = dict((cfg.coordStart or {}))
+    coord_active = {k for k in (cfg.coordStart or {})}
     cmd_seq = cfg.commandCoordStart
     for sel in cfg.signals:
         s = sig_index.get((sel.sheet, sel.suffix))
@@ -155,7 +157,14 @@ def preview(cfg: ExportConfig):
         if not sel.customId:
             seq[sel.sheet] += 1
         coord = sel.inputCoord
-        if (coord is None or coord == "") and klass in (cfg.coordStart or {}):
+        if coord not in (None, ""):
+            if sel.followFrom:
+                try:
+                    coord_seq[klass] = int(coord) + 1
+                    coord_active.add(klass)
+                except (ValueError, TypeError):
+                    pass
+        elif klass in coord_active:
             coord = coord_seq.get(klass)
             coord_seq[klass] = (coord_seq.get(klass) or 0) + 1
 

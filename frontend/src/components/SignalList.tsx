@@ -8,6 +8,11 @@ export interface CmdCfg {
   outputCoord: string;
 }
 
+export interface IdxCfg {
+  coord: string;
+  follow: boolean;
+}
+
 interface Props {
   title: string;
   sheet: string;
@@ -15,15 +20,18 @@ interface Props {
   signals: Signal[];
   selected: Set<string>;
   cmdConfig: Record<string, CmdCfg>;
+  idxConfig: Record<string, IdxCfg>;
   onToggle: (key: string) => void;
   onToggleMany: (keys: string[], on: boolean) => void;
   onCmdChange: (key: string, patch: Partial<CmdCfg>) => void;
+  onIdxChange: (key: string, patch: Partial<IdxCfg>) => void;
 }
 
 const phaseLabel = (p: string | null) => (p && p !== "None" ? p : "");
 
 export function SignalList({
-  title, sheet, kind, signals, selected, cmdConfig, onToggle, onToggleMany, onCmdChange,
+  title, sheet, kind, signals, selected, cmdConfig, idxConfig,
+  onToggle, onToggleMany, onCmdChange, onIdxChange,
 }: Props) {
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
@@ -78,6 +86,7 @@ export function SignalList({
           const key = `${sheet}|${sig.suffix}`;
           const on = selected.has(key);
           const cfg = cmdConfig[key] || { format: "template", outputCoord: "" };
+          const idx = idxConfig[key] || { coord: "", follow: false };
           return (
             <div
               key={key}
@@ -117,6 +126,37 @@ export function SignalList({
                   </div>
                 </div>
               </button>
+
+              {on && (
+                <div className="flex flex-wrap items-center gap-2 border-t border-brand-500/20 px-3 py-2 pl-11">
+                  <span className="text-[11px] text-slate-400">Índice (entrada):</span>
+                  <input
+                    value={idx.coord}
+                    onChange={(e) => onIdxChange(key, { coord: e.target.value })}
+                    placeholder="auto"
+                    title="Endereço DNP3 de entrada deste sinal (vazio = mantém o automático)"
+                    className="w-24 rounded-md border border-slate-700 bg-slate-950/70 px-2 py-1 font-mono text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-brand-500"
+                  />
+                  <label
+                    title="Os próximos sinais selecionados seguem a numeração a partir deste endereço +1"
+                    className={clsx(
+                      "flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition",
+                      idx.follow
+                        ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-300"
+                        : "border-slate-700 text-slate-400 hover:border-slate-500"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      className="accent-emerald-500"
+                      checked={idx.follow}
+                      disabled={!idx.coord.trim()}
+                      onChange={(e) => onIdxChange(key, { follow: e.target.checked })}
+                    />
+                    próximos seguem daqui
+                  </label>
+                </div>
+              )}
 
               {on && sig.hasCommand && (
                 <div className="flex flex-wrap items-center gap-2 border-t border-brand-500/20 px-3 py-2 pl-11">
