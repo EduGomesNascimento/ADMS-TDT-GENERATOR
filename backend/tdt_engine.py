@@ -35,7 +35,7 @@ SIGLA_INDEX_PATH = DATA / "sigla_index.json"
 
 HEADER_ROWS = 4
 
-from openpyxl.styles import PatternFill as _PF
+from openpyxl.styles import PatternFill as _PF, Font
 _UNCERTAIN_FILL = _PF("solid", fgColor="FFF2CC")   # amarelo claro p/ linhas incertas
 
 # Presets de formato de comando (output) descobertos nas TDTs reais.
@@ -377,6 +377,53 @@ def parse_points_list(file_bytes: bytes) -> dict:
                 "motivo": str(r[c_mot]).strip() if c_mot is not None and r[c_mot] else "",
             })
     return out
+
+
+def export_standardized_list(parsed: dict) -> bytes:
+    """Escreve a lista (dict no formato de to_lista_resumida — sigla/nome/inCoord/
+    outCoord/escala/aor) no FORMATO PADRONIZADO que parse_points_list lê de volta
+    (abas Discreto / Analogicos / DiscretoAnalogico). Serve de PONTE: uma lista
+    reconhecida (fora-de-padrão) vira uma lista padronizada, que então entra na
+    importação padronizada e gera a TDT — fechando os 3 caminhos.
+
+    Cabeçalhos escolhidos p/ casar com _col(): 'INDEX DNP3 - Entrada' contém ENTRADA,
+    'INDEX DNP3 - Comando' contém COMANDO, 'INDEX DNP3' contém INDEX, etc.
+    """
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    bold = Font(bold=True)
+
+    def _sheet(title, headers, items, row_fn):
+        ws = wb.create_sheet(title)
+        ws.append(headers)
+        for c in range(1, len(headers) + 1):
+            ws.cell(1, c).font = bold
+        for it in items:
+            ws.append(row_fn(it))
+        return ws
+
+    _sheet("Discreto",
+           ["SIGLA SINAL", "NOME", "INDEX DNP3 - Entrada", "INDEX DNP3 - Comando", "AOR"],
+           parsed.get("discrete", []),
+           lambda it: [it.get("sigla", ""), it.get("nome", ""),
+                       it.get("inCoord") or "", it.get("outCoord") or "", it.get("aor") or ""])
+
+    _sheet("Analogicos",
+           ["SIGLA", "NOME", "Escala", "INDEX DNP3", "AOR"],
+           parsed.get("analog", []),
+           lambda it: [it.get("sigla", ""), it.get("nome", ""),
+                       it.get("escala") or "", it.get("inCoord") or "", it.get("aor") or ""])
+
+    da = parsed.get("discrete_analog", [])
+    if da:
+        _sheet("DiscretoAnalogico",
+               ["SIGLA", "NOME", "Escala", "INDEX DNP3", "AOR"], da,
+               lambda it: [it.get("sigla", ""), it.get("nome", ""),
+                           it.get("escala") or "", it.get("inCoord") or "", it.get("aor") or ""])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 PROTOCOLS = {

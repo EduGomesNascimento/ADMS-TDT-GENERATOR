@@ -104,6 +104,7 @@ export function RawImportPanel({ onBack }: Props) {
   const [siglaOpts,  setSiglaOpts]  = useState<string[]>([]);
   const [onlyPending,setOnlyPending]= useState(false);
   const [genRev,     setGenRev]     = useState(false);
+  const [genStd,     setGenStd]     = useState(false);
 
   const prov = PROVIDERS[providerIdx];
   const minConf = CONF_OPTIONS[minConfIdx];
@@ -143,23 +144,28 @@ export function RawImportPanel({ onBack }: Props) {
     }
   }
 
-  // gera a TDT a partir dos sinais REVISADOS (sugestão + correções do usuário)
+  // monta o payload dos sinais REVISADOS (sugestão + correções do usuário)
+  function reviewedPayload() {
+    return result!.signals
+      .map((m, idx) => ({
+        module: m.module,
+        sourceSheet: (m as any).sourceSheet,
+        signalType: m.signalType,
+        sigla: (edits[idx] ?? m.sigla ?? "").trim(),
+        dnp3Addr: m.dnp3Addr,
+      }))
+      .filter((s) => s.sigla);
+  }
+
+  // gera a TDT a partir dos sinais REVISADOS
   async function genReviewed() {
     if (!result) return;
     setGenRev(true); setError(null);
     try {
-      const reviewed = result.signals
-        .map((m, idx) => ({
-          module: m.module,
-          signalType: m.signalType,
-          sigla: (edits[idx] ?? m.sigla ?? "").trim(),
-          dnp3Addr: m.dnp3Addr,
-        }))
-        .filter((s) => s.sigla);
       const r = await fetch(`${BASE}/raw/export_reviewed`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ alias: (alias.trim() || result.alias), protocol, signals: reviewed }),
+        body: JSON.stringify({ alias: (alias.trim() || result.alias), protocol, signals: reviewedPayload() }),
       });
       if (!r.ok) throw new Error((await r.text()) || "Falha");
       const blob = await r.blob();
@@ -169,6 +175,27 @@ export function RawImportPanel({ onBack }: Props) {
       setError(e.message);
     } finally {
       setGenRev(false);
+    }
+  }
+
+  // exporta os sinais reconhecidos como LISTA PADRONIZADA (ponte p/ o caminho padronizado)
+  async function genStandardized() {
+    if (!result) return;
+    setGenStd(true); setError(null);
+    try {
+      const r = await fetch(`${BASE}/raw/export_standardized`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alias: (alias.trim() || result.alias), protocol, signals: reviewedPayload() }),
+      });
+      if (!r.ok) throw new Error((await r.text()) || "Falha");
+      const blob = await r.blob();
+      const m = (r.headers.get("Content-Disposition") || "").match(/filename="?([^"]+)"?/);
+      downloadBlob(blob, m ? m[1] : "Lista_Padronizada.xlsx");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setGenStd(false);
     }
   }
 
@@ -462,6 +489,15 @@ export function RawImportPanel({ onBack }: Props) {
                   <input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} />
                   Só pendentes (MÉDIA/BAIXA/SEM)
                 </label>
+                <button
+                  onClick={genStandardized}
+                  disabled={genStd || reviewedCount === 0}
+                  title="Exporta um .xlsx no formato da importação padronizada (abas Discreto/Analogicos)"
+                  className="btn-ghost border border-slate-700 text-xs"
+                >
+                  {genStd ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                  Lista padronizada ({reviewedCount})
+                </button>
                 <button
                   onClick={genReviewed}
                   disabled={genRev || reviewedCount === 0}

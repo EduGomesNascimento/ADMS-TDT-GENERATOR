@@ -478,6 +478,7 @@ def raw_siglas(protocol: str = "dnp3"):
 
 class ReviewedSignal(BaseModel):
     module: str | None = None
+    sourceSheet: str | None = None
     signalType: str = "discrete"
     sigla: str
     dnp3Addr: int | str | None = None
@@ -503,6 +504,29 @@ def raw_export_reviewed(cfg: ReviewedExport):
         raise HTTPException(500, f"falha na geração da TDT: {e}")
     stamp = dt.datetime.now().strftime("%Y%m%d_%H%M")
     fname = f"TDT_{alias}_{cfg.protocol}_revisada_{stamp}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(xlsx),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@app.post("/api/raw/export_standardized")
+def raw_export_standardized(cfg: ReviewedExport):
+    """PONTE: exporta os sinais reconhecidos/revisados como uma LISTA PADRONIZADA
+    (.xlsx com abas Discreto/Analogicos) — o formato da importação padronizada.
+    Permite levar uma lista fora-de-padrão para o caminho padronizado."""
+    alias = cfg.alias.strip()
+    if not alias:
+        raise HTTPException(400, "informe o alias da subestação")
+    signals = [s.model_dump() for s in cfg.signals]
+    lista = ai_mapper.reviewed_to_lista(signals, alias)
+    try:
+        xlsx = tdt_engine.export_standardized_list(lista)
+    except Exception as e:
+        raise HTTPException(500, f"falha ao gerar a lista padronizada: {e}")
+    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M")
+    fname = f"Lista_Padronizada_{alias}_{stamp}.xlsx"
     return StreamingResponse(
         io.BytesIO(xlsx),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
