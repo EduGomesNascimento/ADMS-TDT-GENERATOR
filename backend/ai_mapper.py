@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -839,7 +840,8 @@ def map_signals(
             heuristic.append(None)
             unmatched_idx.append(i)
 
-    if llm_cfg and unmatched_idx:
+    _provider = (llm_cfg or {}).get('provider')
+    if _provider and _provider != 'none' and unmatched_idx:
         unmatched = [raw_signals[i] for i in unmatched_idx]
         llm_res = _map_llm(unmatched, sigla_flat, llm_cfg, stats=stats)
         for batch_i, orig_i in enumerate(unmatched_idx):
@@ -894,19 +896,50 @@ def _add_to_lista(discrete, analog, da, sigla, nome, stype, addr, aor):
                          'inCoord': addr, 'outCoord': '', 'aor': aor})
 
 
+def _clean_token(s: str) -> str:
+    """Sanitiza um texto p/ token de nome ADMS: MAIÚSCULO, sem acento, só
+    letras/números/hífen (remove espaços e unidades). 'LT SAN 138kV'→'LTSAN138KV'."""
+    if not s:
+        return ''
+    s = unicodedata.normalize('NFD', str(s).upper())
+    s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+    return re.sub(r'[^A-Z0-9-]', '', s)
+
+
+def _unique_name(seen: dict, alias: str, module: str, sigla: str) -> str:
+    """Nome ADMS único: {alias}_{module}_{device}_{sigla}. O ADMS exige nomes
+    distintos — quando dois pontos do mesmo módulo dão o MESMO sigla, incrementa
+    o token de DEVICE (LT67SAN → LT67SAN-2) mantendo o SIGLA limpo no fim."""
+    base = f"{alias}_{module}_{module}_{sigla}"
+    n = seen.get(base, 0) + 1
+    seen[base] = n
+    if n == 1:
+        return base
+    return f"{alias}_{module}_{module}-{n}_{sigla}"
+
+
+def _module_token(m: 'MappedSignal') -> str:
+    """Token de módulo limpo. Prefere a ABA de origem (ex.: LT67SAN — identifica o
+    relé/bay e distingue 67 de 87) sobre a descrição do módulo (que tem espaços e
+    pode colidir entre abas). Fallback 'XX'."""
+    return _clean_token(getattr(m, 'source_sheet', '')) or _clean_token(m.module) or 'XX'
+
+
 def to_lista_resumida(mapped: list[MappedSignal], alias: str,
                       min_confidence: int = 60) -> dict:
     """Converte sinais mapeados → formato de generate_tdt_from_list (filtra por confiança).
     Marca como INCERTO (destaque na TDT) tudo que não for ALTA."""
+    alias = _clean_token(alias) or 'XX'
     discrete, analog, da = [], [], []
     uncertain: set = set()
+    seen: dict = {}
     for m in mapped:
         if not m.sigla or m.confidence < min_confidence:
             continue
-        module = m.module or 'XX'
-        nome = f"{alias}_{module}_{module}_{m.sigla}"
+        module = _module_token(m)
+        nome = _unique_name(seen, alias, module, m.sigla)
         _add_to_lista(discrete, analog, da, m.sigla, nome, m.signal_type,
-                      m.dnp3_addr, f"{alias} Distr")
+                      m.dnp3_addr, 'Distr')
         if m.confidence_label != 'ALTA':
             uncertain.add(nome)
     return {'discrete': discrete, 'analog': analog,
@@ -916,15 +949,16 @@ def to_lista_resumida(mapped: list[MappedSignal], alias: str,
 def reviewed_to_lista(signals: list[dict], alias: str) -> dict:
     """Converte os sinais REVISADOS pelo usuário (cada um já com a SIGLA confirmada)
     → formato de generate_tdt_from_list. Sem filtro de confiança (já confirmado)."""
+    alias = _clean_token(alias) or 'XX'
     discrete, analog, da = [], [], []
+    seen: dict = {}
     for s in signals:
         sig = (s.get('sigla') or '').strip()
         if not sig:
             continue
-        module = (s.get('module') or 'XX').strip() or 'XX'
-        nome = f"{alias}_{module}_{module}_{sig}"
+        module = _clean_token(s.get('sourceSheet') or s.get('module')) or 'XX'
+        nome = _unique_name(seen, alias, module, sig)
         _add_to_lista(discrete, analog, da, sig, nome,
-                      s.get('signalType', 'discrete'), s.get('dnp3Addr'),
-                      f"{alias} Distr")
+                      s.get('signalType', 'discrete'), s.get('dnp3Addr'), 'Distr')
     return {'discrete': discrete, 'analog': analog,
             'discrete_analog': da, 'inputErrors': []}
