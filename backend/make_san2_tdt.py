@@ -53,6 +53,9 @@ def _fix_21(desc: str) -> str | None:
 # aba da lista → módulo do MODELO (linha consolidada)
 _MODEL_LINE = {'LT67TPJ2': 'LTTPJ', 'LT21TPJ2': 'LTTPJ'}
 
+# sigla que referencia seccionadora/chave (89-xx_/29-xx_)
+_SW_RE = re.compile(r'^(89-\d+|29-\d+)_')
+
 def _model_module(sheet_module: str) -> str:
     return _MODEL_LINE.get(sheet_module, sheet_module)
 
@@ -60,16 +63,29 @@ def _short_dev(dev: str) -> str:
     """52-04 → 52-4 (modelo nomeia sem zero à esquerda)."""
     return re.sub(r'-0+(\d)', r'-\1', dev)
 
+# elementos de relé confirmados nas fotos do modelo (SND_LTTPJ_LTTPJ_67_PROT_5FC,
+# _21_PROT_50N2, ...) — só roteia p/ o elemento quando ele COMPROVADAMENTE existe
+_PROT_ELEM = {'5FA', '5FB', '5FC', '50F1', '50F2', '50N1', '50N2', '51F', '51FN'}
+
 def _device_mapping(alias: str, module: str, breaker: str, sigla: str) -> str:
     s = sigla.upper()
     line = _model_module(module)
+    sw = _SW_RE.match(s)
+    if sw:                                       # seccionadora: mesmo padrão do DJ
+        return f"{alias}_{line}_{sw.group(1)}_SEC"
     if s in ('21FA', '21FB', '21FC'):
         return f"{alias}_{line}_{line}_PROT_{s}"
+    if s == '27':                                # subtensão mora no relé 67 (27_T)
+        return f"{alias}_{line}_{line}_67_PROT_27_T"
+    if s.startswith('67_') and s[3:] in _PROT_ELEM:
+        return f"{alias}_{line}_{line}_67_PROT_{s[3:]}"
+    if s.startswith('21_') and s[3:] in _PROT_ELEM:
+        return f"{alias}_{line}_{line}_21_PROT_{s[3:]}"
     if s.startswith('21'):                       # zonas/elementos de distância
         return f"{alias}_{line}_{line}_21_PROT"
     if s.startswith('25'):                       # sincronismo
         return f"{alias}_{line}_{line}_PROT_{s}"
-    # tudo o mais (incl. seccionadoras) / dúvida → DISJUNTOR comum do vão
+    # tudo o mais / dúvida → DISJUNTOR comum do vão
     return f"{alias}_{line}_{_short_dev(breaker)}_DJ"
 
 _CLEAN = A._clean_token
