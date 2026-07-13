@@ -42,16 +42,25 @@ def _fix_21(desc: str) -> str | None:
     return '21'
 
 # ── Device Mapping: por família de SIGLA ──────────────────────────────────────
+# Dispositivos FÍSICOS usam o formato do modelo `{dispositivo}_{alias}`
+# (ex.: 52-04_SND, 89-22_SND) — o disjuntor é COMUM aos relés do vão, então
+# todos os sinais dele apontam pro MESMO objeto. Elementos de proteção usam
+# o objeto do relé ({alias}_{mod}_{mod}_21_PROT / _PROT_21FA / _PROT_25x).
+_SW_RE = re.compile(r'^(89-\d+|29-\d+)_')
+
 def _device_mapping(alias: str, module: str, breaker: str, sigla: str) -> str:
     s = sigla.upper()
+    sw = _SW_RE.match(s)
+    if sw:                                       # seccionadora/chave própria
+        return f"{sw.group(1)}_{alias}"
     if s in ('21FA', '21FB', '21FC'):
         return f"{alias}_{module}_{module}_PROT_{s}"
     if s.startswith('21'):                       # zonas/elementos de distância
         return f"{alias}_{module}_{module}_21_PROT"
     if s.startswith('25'):                       # sincronismo
         return f"{alias}_{module}_{module}_PROT_{s}"
-    # tudo o mais / dúvida → DISJUNTOR
-    return f"{alias}_{module}_{breaker}_DJ"
+    # tudo o mais / dúvida → DISJUNTOR comum do vão
+    return f"{breaker}_{alias}"
 
 _CLEAN = A._clean_token
 _BRK_RE = re.compile(r'\b(52-?\d{1,3})\b')
