@@ -58,6 +58,7 @@ def main():
     SH = "DNP3_DiscreteSignals"
     i_odt = cat.label_index(SH, "Output Data Type")
     i_ctrl = cat.label_index(SH, "Control Codes")
+    i_idt = cat.label_index(SH, "Input Data Type")
 
     def cmd_count(sigla):
         t = dig.get(sigla) or []
@@ -66,6 +67,12 @@ def main():
             return len(str(ctrl).split(";"))
         odt = t[i_odt] if i_odt is not None and i_odt < len(t) else None
         return 1 if odt not in (None, "") else 0
+
+    def is_double(sigla):
+        """Ponto de posição (MultiCoord/DoubleBit) exige DUAS coords distintas."""
+        t = dig.get(sigla) or []
+        idt = t[i_idt] if i_idt is not None and i_idt < len(t) else None
+        return str(idt) in ("MultiCoord", "DoubleBit")
 
     signals = load_changeset()
     print(f"changeset: {len(signals)} sinais do modelo")
@@ -92,9 +99,15 @@ def main():
             if cc:
                 out = f"{fill};{fill}" if cc == 2 else fill
                 fill += 1
-            discrete.append({"sigla": sigla, "nome": nome, "inCoord": seq["di"],
+            # ponto de posição (DoubleBit): 2 coordenadas DISTINTAS "n;n+1"
+            if is_double(sigla):
+                ic = f"{seq['di']};{seq['di'] + 1}"
+                seq["di"] += 2
+            else:
+                ic = seq["di"]
+                seq["di"] += 1
+            discrete.append({"sigla": sigla, "nome": nome, "inCoord": ic,
                              "outCoord": out, "aor": AOR, "deviceMapping": dm})
-            seq["di"] += 1
 
     lista = {"discrete": discrete, "analog": analog, "discrete_analog": [],
              "inputErrors": [], "uncertain": set()}
@@ -103,7 +116,36 @@ def main():
     for t, nm, s in missing:
         print(f"   [FALTA NA BASE] {nm} (sigla {s})")
 
-    tdt, report = E.generate_tdt_from_list(lista, protocol="dnp3", native=True)
+    tdt, report = E.generate_tdt_from_list(lista, protocol="dnp3", native=False)
+
+    # ── pós-processamento (regras do validador ADMS) ─────────────────────────
+    import io as _io
+    import openpyxl as _px
+    import excel_native
+    wb = _px.load_workbook(_io.BytesIO(tdt))
+    ws = wb["DNP3_DiscreteSignals"]
+    lab = {ws.cell(4, c).value: c for c in range(1, ws.max_column + 1)}
+    cN, cST, cDM, cNV = lab["Signal Name"], lab["Signal Type"], lab["Device Mapping"], lab["Normal Value"]
+    fixed_rt = fixed_nv = 0
+    for r in range(5, ws.max_row + 1):
+        nome = ws.cell(r, cN).value
+        if not nome:
+            continue
+        dm = str(ws.cell(r, cDM).value or "")
+        # RelayTrip só pode referenciar elemento de proteção; em device físico
+        # (disjuntor/seccionadora) o tipo tem de ser Custom
+        if str(ws.cell(r, cST).value) == "RelayTrip" and re.search(r"_(DJ|SEC)$", dm):
+            ws.cell(r, cST).value = "Custom"
+            fixed_rt += 1
+        # DJF1: Normal Value deve corresponder ao normal Open do disjuntor no modelo
+        if str(nome).endswith("_DJF1"):
+            ws.cell(r, cNV).value = 1
+            fixed_nv += 1
+    print(f"pos-fix: RelayTrip->Custom={fixed_rt}, NormalValue DJF1->1={fixed_nv}")
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    tdt = excel_native.resave_native(buf.getvalue())
     OUT.write_bytes(tdt)
     print(f"TDT salva: {OUT} ({len(tdt)} bytes) | "
           f"ok dig={report['discrete']['matched']} anl={report['analog']['matched']}")
