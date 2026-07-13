@@ -587,7 +587,7 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3", native: bool = 
         idx_out = L("Output Coordinates", "Output Coordinate")
         idx_aor = L("Signal AOR Group"); idx_ru = L("Remote Unit")
         idx_cid = L("Remote Point Custom ID"); idx_scale = L("Scaling Factor")
-        idx_scustom = L("Signal Custom ID")
+        idx_scustom = L("Signal Custom ID"); idx_dm = L("Device Mapping")
 
         style_row = HEADER_ROWS + 1
         styles = [copy(ws.cell(row=style_row, column=c + 1)._style) for c in range(ncol)]
@@ -625,6 +625,9 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3", native: bool = 
                 row[idx_scale] = it["escala"]
             if idx_aor is not None and it.get("aor"):
                 row[idx_aor] = f"{alias} {it['aor']}"
+            # Device Mapping: override da lista (senão mantém o tokenizado do template)
+            if idx_dm is not None and it.get("deviceMapping"):
+                row[idx_dm] = it["deviceMapping"]
             if idx_cid is not None and row[idx_cid]:
                 k = (alias, tag)
                 custom_seq[k] = custom_seq.get(k, 0) + 1
