@@ -106,7 +106,7 @@ def build(path: str, alias_cli: str | None = None, only_sheet: str | None = None
     # monta a lista: índice GLOBAL re-sequenciado + device mapping + AOR Trans.
     # REGRA: nada sem index/comando — o que não tem valor real ganha filler ALTO
     # (9599+) para o ADMS aceitar e ficar visível p/ ajuste posterior.
-    AOR = 'Trans'
+    AOR = 'SAN Trans'      # nome COMPLETO do grupo no modelo (com espaço = literal)
     FILL_START = 9599
     fill = {'in': FILL_START, 'out': FILL_START}
     def _filler(kind):

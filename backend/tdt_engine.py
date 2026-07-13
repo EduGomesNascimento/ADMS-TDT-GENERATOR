@@ -624,7 +624,10 @@ def generate_tdt_from_list(parsed: dict, protocol: str = "dnp3", native: bool = 
             if klass in ("analog", "discrete_analog") and idx_scale is not None and it.get("escala") not in (None, ""):
                 row[idx_scale] = it["escala"]
             if idx_aor is not None and it.get("aor"):
-                row[idx_aor] = f"{alias} {it['aor']}"
+                # AOR com espaço = nome COMPLETO do grupo (literal, ex. 'SAN Trans');
+                # sem espaço = sufixo a prefixar com o alias (ex. 'Distr')
+                a = str(it["aor"])
+                row[idx_aor] = a if " " in a else f"{alias} {a}"
             # Device Mapping: override da lista (senão mantém o tokenizado do template)
             if idx_dm is not None and it.get("deviceMapping"):
                 row[idx_dm] = it["deviceMapping"]
