@@ -81,7 +81,41 @@ def build(path: str, alias_cli: str | None = None, only_sheet: str | None = None
         if f and f in BASE_DIG:
             m.sigla = f; m.confidence = max(m.confidence, 90); m.confidence_label = 'ALTA'
 
-    # monta a lista com índice GLOBAL re-sequenciado + device mapping
+    # ── comando no TEMPLATE: se a SIGLA da base é comandável, o ADMS exige
+    #    Output Coordinates preenchido ("cannot be left empty") ────────────────
+    cat = E.Catalog()
+    SH = 'DNP3_DiscreteSignals'
+    i_odt = cat.label_index(SH, 'Output Data Type')
+    i_ctrl = cat.label_index(SH, 'Control Codes')
+    i_dir = cat.label_index(SH, 'Direction')
+
+    def _tpl(sigla):
+        return IDX[SH].get(sigla) or []
+
+    def _cmd_count(sigla) -> int:
+        """0 = não-comandável; 1/2 = nº de coords de comando do template."""
+        t = _tpl(sigla)
+        def g(i): return t[i] if i is not None and i < len(t) else None
+        ctrl = g(i_ctrl)
+        if ctrl not in (None, ''):
+            return len(str(ctrl).split(';'))
+        if g(i_odt) not in (None, '') or g(i_dir) in ('Write', 'ReadWrite'):
+            return 1
+        return 0
+
+    # monta a lista: índice GLOBAL re-sequenciado + device mapping + AOR Trans.
+    # REGRA: nada sem index/comando — o que não tem valor real ganha filler ALTO
+    # (9599+) para o ADMS aceitar e ficar visível p/ ajuste posterior.
+    AOR = 'Trans'
+    FILL_START = 9599
+    fill = {'in': FILL_START, 'out': FILL_START}
+    def _filler(kind):
+        v = fill[kind]; fill[kind] += 1
+        return v
+
+    def _fmt_out(sigla, v) -> str:
+        return f"{v};{v}" if _cmd_count(sigla) == 2 else v
+
     discrete, analog = [], []
     seq = {'di': 0, 'ai': 0, 'co': 0}
     seen = {}
@@ -99,15 +133,21 @@ def build(path: str, alias_cli: str | None = None, only_sheet: str | None = None
         dm = _device_mapping(alias, module, brk, m.sigla)
         if m.signal_type == 'analog':
             analog.append({'sigla': m.sigla, 'nome': nome, 'escala': '',
-                           'inCoord': seq['ai'], 'aor': 'Distr', 'deviceMapping': dm})
+                           'inCoord': seq['ai'], 'aor': AOR, 'deviceMapping': dm})
             seq['ai'] += 1
         elif m.signal_type == 'command':
-            discrete.append({'sigla': m.sigla, 'nome': nome, 'inCoord': '',
-                             'outCoord': seq['co'], 'aor': 'Distr', 'deviceMapping': dm})
+            # comando também precisa de Input Coordinates (status do template):
+            # sem valor real na lista → filler alto
+            discrete.append({'sigla': m.sigla, 'nome': nome,
+                             'inCoord': _filler('in'),
+                             'outCoord': _fmt_out(m.sigla, seq['co']),
+                             'aor': AOR, 'deviceMapping': dm})
             seq['co'] += 1
         else:
+            cc = _cmd_count(m.sigla)
+            out = _fmt_out(m.sigla, _filler('out')) if cc else ''
             discrete.append({'sigla': m.sigla, 'nome': nome, 'inCoord': seq['di'],
-                             'outCoord': '', 'aor': 'Distr', 'deviceMapping': dm})
+                             'outCoord': out, 'aor': AOR, 'deviceMapping': dm})
             seq['di'] += 1
 
     lista = {'discrete': discrete, 'analog': analog, 'discrete_analog': [],
