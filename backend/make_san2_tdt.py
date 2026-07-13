@@ -56,10 +56,14 @@ def _device_mapping(alias: str, module: str, breaker: str, sigla: str) -> str:
 _CLEAN = A._clean_token
 _BRK_RE = re.compile(r'\b(52-?\d{1,3})\b')
 
-def build(path: str, alias_cli: str | None = None):
+def build(path: str, alias_cli: str | None = None, only_sheet: str | None = None):
     data = Path(path).read_bytes()
     raw, alias_det = A.parse_raw_excel(data)
     alias = _CLEAN(alias_cli or alias_det or 'SND')
+    if only_sheet:                               # filtra por módulo (ex.: 'TPJ')
+        raw = [s for s in raw if only_sheet.upper() in s.source_sheet.upper()]
+        print(f"filtro módulo '{only_sheet}': {len(raw)} sinais nas abas "
+              f"{sorted({s.source_sheet for s in raw})}")
 
     # descobre o disjuntor (52-xx) de cada aba a partir das descrições
     breaker = {}
@@ -117,8 +121,10 @@ def build(path: str, alias_cli: str | None = None):
 if __name__ == "__main__":
     src = sys.argv[1] if len(sys.argv) > 1 else "C:/Users/egnpo/Downloads/SAN2_V05.xlsx"
     alias = sys.argv[2] if len(sys.argv) > 2 else None
-    lista, alias = build(src, alias)
+    only = sys.argv[3] if len(sys.argv) > 3 else None
+    lista, alias = build(src, alias, only)
     tdt, report = E.generate_tdt_from_list(lista, protocol='dnp3', native=True)
-    out = f"C:/Users/egnpo/Downloads/TDT_SAN2_gerada.xlsx"
+    tag = f"_{only}" if only else ""
+    out = f"C:/Users/egnpo/Downloads/TDT_SAN2{tag}_gerada.xlsx"
     Path(out).write_bytes(tdt)
     print(f"TDT salva: {out} ({len(tdt)} bytes) | dig ok={report['discrete']['matched']} anl={report['analog']['matched']}")
