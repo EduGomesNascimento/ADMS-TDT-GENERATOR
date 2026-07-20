@@ -34,6 +34,8 @@ BASES = {"AL11": 0, "AL12": 100, "AL13": 200, "AL14": 300, "AL15": 400,
          "AL21": 500, "AL22": 600, "AL23": 700, "AL24": 800}
 EXISTING = ("AL21", "AL22")
 SCALE_1000 = {"P", "Q", "S"}
+# AJG2: Message Mapping padrão (v3 trazia G1@G2___GRUPO 1@GRUPO 2, errado)
+AJG2_MM = "DESATIVAR@ATIVAR___DESATIVADO@ATIVADO___Custom_S_TC_SV"
 
 
 def _labels(ws):
@@ -69,6 +71,7 @@ def make_feeder(target: str) -> bytes:
         cRPC = lab.get("Remote Point Custom ID")
         cSC = lab.get("Signal Custom ID")
         cESC = lab.get("Scaling Factor")
+        cMM = lab.get("Message Mapping")
         ncol = ws.max_column
 
         # linhas-fonte: as do próprio alvo (se já existe) ou as do AL21 (clone)
@@ -104,6 +107,9 @@ def make_feeder(target: str) -> bytes:
             # escala de P/Q/S = 1000 (novos E existentes)
             if cESC and sheet == "DNP3_AnalogSignals" and _suffix(row[cN - 1]) in SCALE_1000:
                 row[cESC - 1] = 1000
+            # AJG2: Message Mapping padrão (novos E existentes)
+            if cMM and _suffix(row[cN - 1]) == "AJG2":
+                row[cMM - 1] = AJG2_MM
             excel_row = HEADER_ROWS + 1 + i
             for c in range(ncol):
                 cell = ws.cell(excel_row, c + 1, value=row[c])
