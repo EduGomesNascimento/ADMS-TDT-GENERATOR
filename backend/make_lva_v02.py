@@ -35,6 +35,15 @@ SCALE_1000 = {"P", "Q", "S"}
 AJG2_MM = "DESATIVAR@ATIVAR___DESATIVADO@ATIVADO___Custom_S_TC_SV"
 FALLBACK = {"4RLR": "43LR"}          # sigla do chefe sem template exato na base
 
+# Device Mapping — convenção da v3 (que funcionava): trips de proteção →
+# LVA_{mod}_{52-xx}_PROT_{sigla}; TODO o resto (aux, 79/81U, analógicos) → _DJ.
+# Os templates da base trazem DM da subestação de ORIGEM (lixo) — sempre sobrescrever.
+_PROT_DM = {"50F", "50N", "51F", "51N", "51N1", "62BF", "81",
+            "81E1", "81E2", "81E3", "81E4", "81E5",
+            "FA", "FB", "FC", "SGF", "SGFT", "2649"}
+# siglas renomeadas na V02 → nome do device de proteção EXISTENTE no modelo
+_DM_OLDNAME = {"50F1": "50F", "50N1": "50N", "51F1": "51F"}
+
 # (módulo, aba-spec, delta de índice, device)
 AL21_BASE = 500
 MODULES = [
@@ -189,6 +198,12 @@ def main(targets):
                     row[cESC - 1] = 1000
                 if cMM and sigla == "AJG2":
                     row[cMM - 1] = AJG2_MM
+                # Device Mapping SEMPRE sobrescrito (convenção v3)
+                cDM = lab.get("Device Mapping")
+                if cDM:
+                    old = _DM_OLDNAME.get(sigla, sigla)
+                    row[cDM - 1] = (f"LVA_{mod}_{device}_PROT_{old}"
+                                    if old in _PROT_DM else f"LVA_{mod}_{device}_DJ")
                 rows.append(row)
 
             for i, row in enumerate(rows):
