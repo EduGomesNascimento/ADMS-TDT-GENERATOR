@@ -55,7 +55,7 @@ def main():
 
     # canonical AL21: (tipo, norm_desc) -> (sigla, equip_kind, rel_index)
     ws21 = wb["AL21"]; c = _cols(ws21)
-    canon = {}
+    canon = {}; canon_desc = {}
     for r in range(2, ws21.max_row + 1):
         desc = ws21.cell(r, c["desc"]).value
         sig = ws21.cell(r, c["sigla"]).value
@@ -66,8 +66,9 @@ def main():
         kind = "BRK" if equip.startswith("52-") else equip   # BRK | TC | TP
         tipo = TYPE_MAP.get(str(ws21.cell(r, c["tipo"]).value or "").strip(),
                             str(ws21.cell(r, c["tipo"]).value or "").strip())
-        canon[(tipo, _norm(desc))] = (str(sig).strip(), kind,
-                                      _shift(idx, -AL21_BASE))
+        key = (tipo, _norm(desc))
+        canon[key] = (str(sig).strip(), kind, _shift(idx, -AL21_BASE))
+        canon_desc[key] = str(desc)
     print(f"gabarito AL21: {len(canon)} sinais")
 
     for mod, base in BASES.items():
@@ -92,9 +93,41 @@ def main():
             ws.cell(r, c["tipo"]).value = tipo          # normaliza SP/DP/ME_FL
             ws.cell(r, c["equip"]).value = brk if kind == "BRK" else kind
             filled += 1
-        print(f"{mod} (base {base}): {filled} preenchidos | {len(reserva)} reserva")
-        for x in reserva:
-            print(f"      reserva: {x}")
+        # --- ADICIONA as linhas do gabarito AL21 que a aba não tem (79LO, DR,
+        #     FCOM, AJG2...) — o "79LO tava faltando" do chefe é uma delas ---
+        present = set()
+        for r in range(2, ws.max_row + 1):
+            d = ws.cell(r, c["desc"]).value
+            if d:
+                raw = str(ws.cell(r, c["tipo"]).value or "").strip()
+                present.add((TYPE_MAP.get(raw, raw), _norm(d)))
+        # topologia da aba (coluna 2) e nº da coluna LINHA
+        topo_col = c["desc"] - 1
+        topo = None
+        for r in range(2, ws.max_row + 1):
+            if ws.cell(r, topo_col).value:
+                topo = ws.cell(r, topo_col).value
+                break
+        added = []
+        for (tipo, ndesc), (sig, kind, rel) in canon.items():
+            if (tipo, ndesc) in present:
+                continue
+            # descrição real do gabarito (com nº do disjuntor trocado)
+            real_desc = canon_desc[(tipo, ndesc)].replace("52-21", brk)
+            row = ws.max_row + 1
+            if topo_col >= 1:
+                ws.cell(row, topo_col).value = topo
+            ws.cell(row, c["desc"]).value = real_desc
+            ws.cell(row, c["tipo"]).value = tipo
+            ws.cell(row, c["mod"]).value = mod
+            ws.cell(row, c["equip"]).value = brk if kind == "BRK" else kind
+            ws.cell(row, c["sigla"]).value = sig
+            ws.cell(row, c["idx"]).value = _shift(rel, base)
+            added.append(f"[{tipo}] {sig} idx={_shift(rel, base)} ({real_desc})")
+
+        print(f"{mod} (base {base}): {filled} preenchidos | {len(added)} ADICIONADOS | {len(reserva)} reserva")
+        for x in added:
+            print(f"      + {x}")
 
     wb.save(OUT)
     print(f"\nsalva: {OUT.name}")
