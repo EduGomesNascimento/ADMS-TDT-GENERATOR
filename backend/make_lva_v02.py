@@ -172,11 +172,19 @@ def main(targets):
                                 if c and c - 1 < len(dj) and dj[c - 1] not in (None, ""):
                                     row[c - 1] = dj[c - 1]
                     else:
-                        # sem comando no spec → limpa campos de comando do template
+                        # sem comando no spec → vira sinal de STATUS puro: limpa os
+                        # campos de comando E o Direction/Timeout (senão o validador
+                        # exige Output Data Type/Coordinates — caso DJA1/27)
                         row[cOUT - 1] = None
                         for c in cmd_cols:
                             if c:
                                 row[c - 1] = None
+                        ref = DIG.get("MOLA") or []       # sigla status-puro de referência
+                        for lbl in ("Direction", "Command Timeout [s]", "Commanding Mode",
+                                    "Scan After Command"):
+                            c = lab.get(lbl)
+                            if c and c - 1 < len(ref):
+                                row[c - 1] = ref[c - 1]
                 if klass == "A" and cESC and sigla in SCALE_1000:
                     row[cESC - 1] = 1000
                 if cMM and sigla == "AJG2":
