@@ -22,12 +22,12 @@ import openpyxl
 import excel_native
 
 SRC = Path("C:/Users/egnpo/Downloads/TDT_LVA_20260720_v3.xlsx")
-OUT = Path("C:/Users/egnpo/Downloads/TDT_LVA_BC.xlsx")
+OUT = Path("C:/Users/egnpo/Downloads/TDT_LVA_BC2.xlsx")
 DATA = Path(__file__).parent / "data"
 RU = "UTR_LVA_2"
 HEADER_ROWS = 4
 BASE = 900                      # bloco do BC
-ALIAS, MODULE, DEVICE = "LVA", "BC1", "52-26"
+ALIAS, MODULE, DEVICE = "LVA", "BC2", "52-26"   # diagrama: banco = BC2
 PREFIX = f"{ALIAS}_{MODULE}_{DEVICE}"
 SCALE_1000 = {"P", "Q", "S"}
 
@@ -40,7 +40,7 @@ FROM_AL21_DIG = ["DJF1", "MOLA", "43LR", "CCMO", "CCCO", "CAFL", "CAB",
 FROM_BASE_DIG = ["27E1", "59E1", "61N", "61", "27", "AUTO", "86", "TRIP"]
 
 # pontos da lista SEM sigla firme na base — ficam de fora e são reportados
-PENDING = ["Secc 29-10 (DP + comando)", "Comando Rearme 86BC", "MCB TC Aberto",
+PENDING = ["Comando Rearme 86BC", "MCB TC Aberto",
            "Programador Horário", "Pickups 50N/61N/61NT", "Retrip 62BF",
            "Diagnósticos do relé (bateria/canal óptico/GPS/memória/troca ajuste)"]
 
@@ -142,6 +142,33 @@ def main():
                 if cRPN:
                     row[cRPN - 1] = nome
                 rows.append(row)
+
+            # Secc 29-10 (diagrama + lista: DP + Comando 29-10) — template SECC
+            # (MultiCoord SwitchStatus); campos de COMANDO copiados do DJF1 do
+            # AL21 (chave comandada real desta UTR)
+            tpl = dig_tpl["SECC"]
+            row = [_subst(v, mapping) for v in tpl]
+            while len(row) < ncol:
+                row.append(None)
+            row = row[:ncol]
+            nome = f"{ALIAS}_{MODULE}_29-10_SECC"
+            row[cN - 1] = nome
+            if cRPN:
+                row[cRPN - 1] = nome
+            if cRU and isinstance(row[cRU - 1], str) or cRU:
+                row[cRU - 1] = RU
+            if cAOR and aor_val:
+                row[cAOR - 1] = aor_val
+            row[cIN - 1] = f"{seq_in};{seq_in + 1}"; seq_in += 2
+            if "DJF1" in al21 and cOUT:
+                dj = al21["DJF1"]
+                for lbl in ("Output Data Type", "Control Codes", "Command Times [s]",
+                            "Commanding Mode", "Command Timeout [s]", "Direction"):
+                    ci = lab.get(lbl)
+                    if ci and dj[ci - 1] not in (None, ""):
+                        row[ci - 1] = dj[ci - 1]
+                row[cOUT - 1] = f"{seq_out};{seq_out}"; seq_out += 1
+            rows.append(row)
 
         # RPCID nominal + Signal Custom ID limpo (objetos novos)
         for row in rows:
