@@ -1,125 +1,144 @@
 """
-casca_devmap.py — Device Mapping da SE CASCA aprendido da TDT ATUAL (CASCA.xlsx).
+casca_devmap.py — Device Mapping da SE CASCA.
 
-"OS DISPOSITIVOS SEGUEM COM O MESMO DEVICE MAPPING DA SUBESTAÇÃO ORIGINAL":
-a TDT atual (abas IEC101/IEC104/DNP3) já tem o Device Mapping certo de cada
-sinal. O nome do sinal lá segue o MESMO padrão da lista nova
-(CAS_{MODULO}_{DEVICE}_{SIGLA}), então dá pra aprender a REGRA:
+FONTE DA VERDADE: PT-MOD-SE-CASCA.xml (export do changeset do modelo
+"Casca_Obra"). Cada elemento traz a propriedade 1224979098644840199, que é o
+"ID de Mapeamento SCADA" — exatamente o texto que a coluna Device Mapping da
+TDT tem que conter. Se o texto não existir lá, o ADMS responde
+"Could not find any device that corresponds to Device Mapping: ...".
 
-    Device Mapping = CAS_{MODULO}_{DEVICE}_{SUFIXO(SIGLA)}
+O QUE O MODELO TEM (clone da CASCA ATUAL):
+  alimentadores AL12 AL13 AL14 AL15 AL21 · linhas LTSCO LTPRI LTMRU
+  trafos TR1(3W) TR2(2W) + TR12AT TR1AT TR1BT TR2AT TR2BT
+  barras B138 BP23 · TSA3 · LTGPR
+O QUE A LISTA NOVA PEDE (subestação modernizada):
+  AL12..AL15 AL21 AL24 AL25 AL26 · BC1(AL18) BC2(AL28) · LT1 LT2 LT3
+  TR6 TR7 (+AT/BT) · IB20 · transferências 24-1(AL18) 24-2(TRF29)
+  BP69 BP113.8 BP213.8 · TSA1 TSA2 (RET1 RET2)
 
-onde SUFIXO é o "tipo de dispositivo" que aquela sigla aponta:
-    PROT_{SIGLA}  proteções (50F, 51N, 21, 87...)   → relé do dispositivo
-    DJ            aux. de disjuntor (MOLA, SF6A, BBAB, CCCO, 79...)
-    SEC           aux. de seccionadora (43LR, LIBM, SECF, DSEC...)
-    TR            sinais de transformador (TOA, TED, 63TA, VF1...)
-    COMTAP        comutador de tap (TAP, CDC, BCDC)
-    TAP_REG       regulador (R90, FC90, DR90)
-    TC / TP       medidas (IA, IB, IC, P, Q / V, VB)
+Ou seja: boa parte dos dispositivos AINDA NÃO EXISTE no modelo. Isso não se
+resolve na TDT — tem que ser criado no diagrama. O que este módulo faz:
 
-Os módulos da lista NOVA (AL18, TR7AT, LT1...) não existem na TDT antiga —
-só a REGRA é transferível, e é ela que o modelo do "Casca_Obra" espera.
+  1) casa pelo texto exato quando ele já existe no modelo;
+  2) casa por MÓDULO + SUFIXO quando só o número do equipamento mudou
+     (o alimentador AL12 do modelo usa 52-2, a lista nova usa 52-12 — é o
+     mesmo vão, então vale CAS_AL12_52-2_DJ);
+  3) dentro de um módulo que existe, se o relé específico não existe cai para
+     o relé genérico _PROT e depois para o disjuntor _DJ
+     ("na dúvida, põe no disjuntor" — instrução do usuário);
+  4) módulo inexistente: devolve o nome canônico e MARCA como pendente, para
+     o relatório listar o que precisa ser criado no Casca_Obra.
 
-Uso: from casca_devmap import build; sufixo = build()['sigla'][SIGLA]
+Uso: from casca_devmap import resolver; dm, origem, pendente = resolver(nome, sigla)
 """
 from __future__ import annotations
 import collections
+import re
 from pathlib import Path
 import openpyxl
 
+MODELO = Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CASCA.xml")
 TDT_ATUAL = Path("C:/Users/egnpo/Downloads/CASCA.xlsx")
+PROP_SCADA_ID = "1224979098644840199"
 HEADER_ROWS = 4
 
-# Regras de fallback para siglas que não aparecem na TDT atual, na ordem:
-#   1) sufixo aprendido da própria sigla (build()['sigla'])
-#   2) família da sigla (prefixo)               → _FAM
-#   3) tipo do dispositivo pelo nome do device  → _POR_DEVICE
-#   4) 'DJ'  (instrução do usuário: na dúvida, disjuntor)
+# ── sufixo (tipo de dispositivo) por sigla — aprendido da TDT atual da CASCA ──
 _FAM = [
     # religador: na TDT atual TODO 79* aponta pro disjuntor, não pro relé
-    #   CAS_AL12_52-2_79 / _79OK / _79_1 -> CAS_AL12_52-2_DJ
-    #   CAS_LTPRI_LTPRI_P_79LO           -> CAS_LTPRI_52-21_DJ
     (("79", "79OK", "79LO", "79_1", "79_2", "79RE", "79EP", "79BL"), "DJ"),
-    # medidas
     (("IA", "IB", "IC", "IN", "IACC", "IBCC", "ICCC", "INCC", "I"), "TC"),
     (("P", "Q", "S", "FP", "COS"), "TC"),
     (("V", "VA", "VB", "VC", "VA_B", "VB_B", "VC_B", "VA_L", "VB_L", "VC_L",
       "VAB", "VBC", "VCA", "F", "FREQ"), "TP"),
-    # comutador / regulador
     (("TAP", "CDC", "BCDC", "DCDC", "CDMT", "MDCD", "CDAM", "CDLR", "RLCD",
       "63CA", "63CD", "20CA", "20CD", "27CD", "59CD", "86CC", "71C", "71HI",
       "71LO", "TOC"), "COMTAP"),
     (("R90", "FC90", "DR90", "R90A", "R90B"), "TAP_REG"),
-    # transformador (ventilação forçada segue TR na TDT atual: VF1/VF2/CAVF/FVF1/FVF2)
-    (("VF", "FVF", "TOA", "TOD", "TOLE", "TEA", "TED", "TENR", "63T", "63TA", "63TD", "71T",
-      "20A", "20D", "20TA", "20TD", "SCAR", "MEMB", "TOED", "DRT1", "DRT2",
-      "FCT1", "FCT2", "FCPL", "CDAM", "86", "87", "87_T"), "TR"),
-    # seccionadora
+    (("VF", "FVF", "TOA", "TOD", "TOLE", "TEA", "TED", "TENR", "63T", "63TA",
+      "63TD", "71T", "20A", "20D", "20TA", "20TD", "SCAR", "MEMB", "TOED",
+      "DRT1", "DRT2", "FCT1", "FCT2", "FCPL", "86", "87", "87_T"), "TR"),
     (("SECF", "SECC", "SECT", "SECG", "SECB", "SELF", "SEC", "LIBM", "DSEC",
       "SLIB", "SECD"), "SEC"),
 ]
 _POR_DEVICE = [("52-", "DJ"), ("89-", "SEC"), ("29-", "SEC"), ("24-", "DJ")]
-
 _MEDIDA_TC = {"IA", "IB", "IC", "IN", "IACC", "IBCC", "ICCC", "INCC", "P", "Q", "S"}
 _MEDIDA_TP = {"V", "VA", "VB", "VC", "VA_B", "VB_B", "VC_B", "VA_L", "VB_L",
               "VC_L", "VAB", "VBC", "VCA", "F"}
+# ordem de rebaixamento dentro de um módulo que existe no modelo
+_DEGRADA = {
+    "COMTAP": ("TR", "DJ"), "TAP_REG": ("TR", "DJ"), "TR": ("DJ",),
+    "TC": ("TP", "DJ"), "TP": ("TC", "DJ"), "SEC": ("DJ",), "DJ": (),
+}
+
+_CACHE = {}
 
 
-def _aprender():
-    """SIGLA → sufixo majoritário observado na TDT atual da CASCA."""
-    if not TDT_ATUAL.exists():
-        return {}, collections.Counter()
-    wb = openpyxl.load_workbook(TDT_ATUAL, read_only=True, data_only=True)
+# ─── catálogo do modelo (XML do changeset) ───────────────────────────────────
+def catalogo():
+    if "cat" in _CACHE:
+        return _CACHE["cat"]
+    validos, por_mod, tipos = set(), collections.defaultdict(dict), {}
+    if MODELO.exists():
+        txt = MODELO.read_text(encoding="utf-8-sig", errors="replace")
+        for b in re.findall(r"<ResourceDescription>(.*?)</ResourceDescription>",
+                            txt, re.S):
+            m = re.search(rf'id="{PROP_SCADA_ID}" value="([^"]*)"', b)
+            if not m or not m.group(1):
+                continue
+            dm = m.group(1)
+            t = re.search(r'type="([^"]+)"', b)
+            validos.add(dm)
+            tipos.setdefault(dm, t.group(1) if t else "?")
+            p = dm.split("_")
+            if len(p) >= 3:
+                por_mod[p[1]].setdefault("_".join(p[3:]) if len(p) > 3 else "", dm)
+    _CACHE["cat"] = {"validos": validos, "por_mod": dict(por_mod), "tipos": tipos}
+    return _CACHE["cat"]
+
+
+# ─── sufixo por sigla (aprendido da TDT atual) ───────────────────────────────
+def _aprender_siglas():
+    if "sig" in _CACHE:
+        return _CACHE["sig"]
     per = collections.defaultdict(collections.Counter)
-    for sn in wb.sheetnames:
-        if "Signals" not in sn and "DiscreteAnalog" not in sn:
-            continue
-        rows = list(wb[sn].iter_rows(values_only=True))
-        if len(rows) <= HEADER_ROWS:
-            continue
-        hdr = [str(c or "").strip() for c in rows[HEADER_ROWS - 1]]
-        ix = {n: i for i, n in enumerate(hdr) if n}
-        cD = ix.get("Device Mapping")
-        if cD is None:
-            continue
-        for r in rows[HEADER_ROWS:]:
-            if not r or not r[0]:
+    if TDT_ATUAL.exists():
+        wb = openpyxl.load_workbook(TDT_ATUAL, read_only=True, data_only=True)
+        for sn in wb.sheetnames:
+            if "Signals" not in sn and "DiscreteAnalog" not in sn:
                 continue
-            nome = str(r[0]).strip()
-            dm = str(r[cD] or "").strip()
-            p = nome.split("_")
-            if not dm or not nome.startswith("CAS_") or len(p) < 4:
+            rows = list(wb[sn].iter_rows(values_only=True))
+            if len(rows) <= HEADER_ROWS:
                 continue
-            pref = f"CAS_{p[1]}_{p[2]}_"
-            if dm.startswith(pref):          # mesmo módulo+device → regra pura
-                per["_".join(p[3:])][dm[len(pref):]] += 1
-    wb.close()
-    return {s: c.most_common(1)[0][0] for s, c in per.items()}, per
+            hdr = [str(c or "").strip() for c in rows[HEADER_ROWS - 1]]
+            ix = {n: i for i, n in enumerate(hdr) if n}
+            cD = ix.get("Device Mapping")
+            if cD is None:
+                continue
+            for r in rows[HEADER_ROWS:]:
+                if not r or not r[0]:
+                    continue
+                nome, dm = str(r[0]).strip(), str(r[cD] or "").strip()
+                p = nome.split("_")
+                if not dm or not nome.startswith("CAS_") or len(p) < 4:
+                    continue
+                pref = f"CAS_{p[1]}_{p[2]}_"
+                if dm.startswith(pref):
+                    per["_".join(p[3:])][dm[len(pref):]] += 1
+        wb.close()
+    _CACHE["sig"] = {s: c.most_common(1)[0][0] for s, c in per.items()}
+    return _CACHE["sig"]
 
 
-_CACHE = None
-
-
-def build():
-    global _CACHE
-    if _CACHE is None:
-        sigla, bruto = _aprender()
-        _CACHE = {"sigla": sigla, "bruto": bruto}
-    return _CACHE
-
-
-def sufixo(sig: str, device: str, modulo: str = "") -> tuple[str, str]:
-    """Retorna (sufixo, origem) — origem serve p/ auditoria no relatório."""
-    tab = build()["sigla"]
+def sufixo(sig: str, device: str) -> tuple[str, str]:
+    tab = _aprender_siglas()
     if sig in tab:
         return tab[sig], "TDT atual"
     for fam, suf in _FAM:
         if sig in fam:
             return suf, "familia"
-    # pickup/alarme de proteção: CAS_X_Y_P_5FA -> CAS_X_Y_P_PROT_5FA
     if len(sig) > 2 and sig[:2] in ("P_", "A_"):
         resto = sig[2:]
-        if resto in tab:                       # ex.: A_79LO -> DJ (segue o 79LO)
+        if resto in tab:
             return tab[resto], "TDT atual (base)"
         for fam, suf in _FAM:
             if resto in fam:
@@ -127,36 +146,64 @@ def sufixo(sig: str, device: str, modulo: str = "") -> tuple[str, str]:
         if resto[:1].isdigit():
             return f"{sig[0]}_PROT_{resto}", "pickup/alarme"
         return "DJ", "default"
-    d = str(device or "")
-    # medida em device de módulo (ex.: CAS_LT1_LT1_IA) → TC/TP
     if sig in _MEDIDA_TC:
         return "TC", "medida"
     if sig in _MEDIDA_TP:
         return "TP", "medida"
+    d = str(device or "")
     for pre, suf in _POR_DEVICE:
         if d.startswith(pre):
-            # proteção (sigla começa com dígito = código ANSI) → relé do device
-            if sig[:1].isdigit() or sig.startswith(("P_", "A_")):
+            if sig[:1].isdigit():
                 return f"PROT_{sig}", "ANSI"
             return suf, "device"
-    if sig[:1].isdigit() or sig.startswith(("P_", "A_")):
+    if sig[:1].isdigit():
         return f"PROT_{sig}", "ANSI"
     return "DJ", "default"
 
 
-def device_mapping(nome: str, sigla: str) -> tuple[str, str]:
-    """CAS_{MOD}_{DEV}_{SUFIXO} a partir do NOME da lista (CAS_MOD_DEV_SIGLA)."""
+# ─── resolução contra o modelo ───────────────────────────────────────────────
+def resolver(nome: str, sigla: str) -> tuple[str, str, str]:
+    """(device_mapping, origem_da_regra, pendencia) — pendencia vazia = ok."""
+    cat = catalogo()
     p = str(nome).split("_")
     alias = p[0] if p else "CAS"
     mod = p[1] if len(p) > 1 else ""
     dev = p[2] if len(p) > 2 else mod
-    suf, origem = sufixo(sigla, dev, mod)
-    return f"{alias}_{mod}_{dev}_{suf}", origem
+    suf, origem = sufixo(sigla, dev)
+    canonico = f"{alias}_{mod}_{dev}_{suf}"
+
+    if not cat["validos"]:                       # sem XML: fica no canônico
+        return canonico, origem, ""
+    if canonico in cat["validos"]:
+        return canonico, f"{origem} + modelo (exato)", ""
+
+    domod = cat["por_mod"].get(mod)
+    if domod:
+        # 1) mesmo sufixo, equipamento renumerado (AL12: 52-12 -> 52-2)
+        if suf in domod:
+            return domod[suf], f"{origem} + modelo (equip. renumerado)", ""
+        # 2) relé específico não existe -> relé genérico do vão
+        if suf.startswith("PROT_") and "PROT" in domod:
+            return domod["PROT"], f"{origem} + modelo (rele generico)", \
+                f"rele {suf} nao existe em {mod}"
+        # 3) rebaixa por tipo de dispositivo
+        for alt in _DEGRADA.get(suf, ()):
+            if alt in domod:
+                return domod[alt], f"{origem} + modelo (fallback {alt})", \
+                    f"{suf} nao existe em {mod}"
+        if "DJ" in domod:
+            return domod["DJ"], f"{origem} + modelo (disjuntor)", \
+                f"{suf} nao existe em {mod}"
+    return canonico, origem, f"MODULO {mod} nao existe no Casca_Obra"
+
+
+def device_mapping(nome: str, sigla: str) -> tuple[str, str]:
+    dm, origem, _ = resolver(nome, sigla)
+    return dm, origem
 
 
 if __name__ == "__main__":
-    tab = build()["sigla"]
-    print(f"siglas aprendidas da TDT atual: {len(tab)}")
-    c = collections.Counter(v if not v.startswith("PROT_") else "PROT_*"
-                            for v in tab.values())
-    print(c.most_common())
+    cat = catalogo()
+    print(f"modelo: {len(cat['validos'])} IDs de mapeamento SCADA")
+    print(f"modulos: {sorted(cat['por_mod'])}")
+    print(f"siglas aprendidas da TDT atual: {len(_aprender_siglas())}")

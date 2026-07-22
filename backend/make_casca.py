@@ -264,15 +264,28 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            ["do BC 1 recebeu sufixo. CORRIJA A CELULA NA PLANILHA DE ORIGEM se o"],
            ["banco de capacitores deve se chamar BC18/BC28 no modelo."],
            [""],
-           ["DEVICE MAPPING"],
-           ["Regra aprendida da TDT ATUAL da CASCA (CASCA.xlsx), como pedido:"],
-           ["'os dispositivos seguem com o mesmo device mapping da subestacao"],
-           ["original'. Cada sinal aponta para o dispositivo do proprio modulo:"],
-           ["  CAS_{MOD}_{DEV}_PROT_{SIGLA}  proteção (codigos ANSI)"],
-           ["  CAS_{MOD}_{DEV}_DJ / _SEC     auxiliares de disjuntor / seccionadora"],
-           ["  CAS_{MOD}_{DEV}_TR / _COMTAP  trafo / comutador de tap"],
-           ["  CAS_{MOD}_{DEV}_TC / _TP      medidas de corrente / tensao"],
-           ["Auditoria completa nas abas 10 e 11. Na duvida vai pro DISJUNTOR."],
+           ["DEVICE MAPPING — conferido contra o MODELO"],
+           ["Fonte da verdade: PT-MOD-SE-CASCA.xml (changeset do Casca_Obra)."],
+           ["Cada dispositivo de la tem um 'ID de Mapeamento SCADA'; a coluna"],
+           ["Device Mapping da TDT precisa conter EXATAMENTE esse texto, senao o"],
+           ["ADMS responde 'Could not find any device that corresponds to...'."],
+           [""],
+           ["PROBLEMA: o Casca_Obra e um clone da CASCA ATUAL. Ele tem"],
+           ["  AL12 AL13 AL14 AL15 AL21 · LTSCO LTPRI LTMRU · TR1 TR2 (+AT/BT)"],
+           ["  B138 BP23 TSA3"],
+           ["e a lista NOVA pede tambem"],
+           ["  AL24 AL25 AL26 · BC1(AL18) BC2(AL28) · LT1 LT2 LT3 · TR6 TR7"],
+           ["  IB20 · 24-1(AL18) 24-2(TRF29) · BP69 BP113.8 BP213.8 · TSA1 TSA2"],
+           ["Esses dispositivos AINDA NAO EXISTEM no diagrama — nenhuma TDT"],
+           ["resolve isso, tem que ser criado no modelo. A aba 13 lista um por um."],
+           [""],
+           ["O QUE FOI RESOLVIDO AUTOMATICAMENTE"],
+           ["  1) texto igual ao do modelo -> usado direto"],
+           ["  2) so o numero do equipamento mudou (AL12 usa 52-2 no modelo e"],
+           ["     52-12 na lista) -> vale o texto do modelo"],
+           ["  3) rele especifico inexistente -> rele generico _PROT do vao"],
+           ["  4) ainda sem alternativa -> DISJUNTOR (instrucao do usuario)"],
+           ["Auditoria: aba 10 (sinal a sinal), 11 (resumo), 14 (rebaixados)."],
            [""],
            ["A LISTA CORRIGIDA ABRE SEM REPARO"],
            ["As formulas foram congeladas no valor calculado e o vinculo externo"],
@@ -346,10 +359,41 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
               c["nome"], c["nome"], c["coord"],
               f"{c.get('input', '')} (preenchimento)"] for c in cmds["orfaos"]])
 
-    dm = dm or {"linhas": [], "origem": Counter()}
+    dm = dm or {"linhas": [], "origem": Counter(), "pendentes": []}
     sheet("10-Device Mapping",
-          ["Aba", "Linha", "Tipo", "SIGLA", "NOME na TDT", "Device Mapping", "Origem da regra"],
+          ["Aba", "Linha", "Tipo", "SIGLA", "NOME na TDT", "Device Mapping",
+           "Origem da regra", "Situacao no modelo"],
           dm["linhas"])
+
+    # o que precisa ser CRIADO no Casca_Obra para os sinais mapearem
+    falta = OrderedDict()
+    for x in dm.get("pendentes", []):
+        if not x["pend"].startswith("MODULO"):
+            continue
+        d = falta.setdefault(x["dm"], {"n": 0, "mod": x["mod"], "dev": x["dev"],
+                                       "ex": []})
+        d["n"] += 1
+        if len(d["ex"]) < 3:
+            d["ex"].append(x["nome"])
+    tipo_disp = {"DJ": "Disjuntor (BREAKER)", "SEC": "Seccionadora (DISCONNECTOR)",
+                 "TC": "Transformador de corrente (CURRENTTR)",
+                 "TP": "Transformador de potencial (POTENTIALTR)",
+                 "TR": "Transformador de potencia (POWERTR)",
+                 "COMTAP": "Comutador de tap", "TAP_REG": "Regulador (REGCTRL)",
+                 "BP": "Barra (BUSBAR)", "RET": "Retificador"}
+    sheet("13-CRIAR no Casca_Obra",
+          ["Device Mapping (ID de Mapeamento SCADA)", "Modulo", "Equipamento",
+           "Tipo de dispositivo", "Sinais que dependem", "Exemplos de sinal"],
+          [[k, v["mod"], v["dev"],
+            tipo_disp.get(k.split("_")[-1],
+                          "Rele de protecao (PROTECTEQP)" if "_PROT" in k else "?"),
+            v["n"], ", ".join(v["ex"])]
+           for k, v in sorted(falta.items(), key=lambda x: -x[1]["n"])])
+
+    sheet("14-DM rebaixado",
+          ["NOME na TDT", "SIGLA", "Device Mapping usado", "Motivo"],
+          [[x["nome"], x["sigla"], x["dm"], x["pend"]]
+           for x in dm.get("pendentes", []) if not x["pend"].startswith("MODULO")])
     sheet("11-DM origem (resumo)",
           ["Origem", "Qtde", "O que significa"],
           [[o, n, {"TDT atual": "sigla existe na TDT atual da CASCA — regra copiada",
@@ -560,7 +604,7 @@ def main():
     plano = [("DNP3_DiscreteSignals", "D"), ("DNP3_AnalogSignals", "A"),
              ("DNP3_DiscreteAnalog", "A/D")]
     gerados = defaultdict(int); pulados = []; usou_fallback = []
-    dm_rows = []; dm_origem = Counter()
+    dm_rows = []; dm_origem = Counter(); dm_pendentes = []
     for sheet, tipo in plano:
         ws = wb[sheet]
         lab = {ws.cell(HEADER_ROWS, c).value: c for c in range(1, ws.max_column + 1)
@@ -607,10 +651,15 @@ def main():
             # Device Mapping SEMPRE sobrescrito: o molde traz o DM da subestação
             # de ORIGEM (lixo). Aqui vale a regra da PRÓPRIA CASCA, aprendida da
             # TDT atual — ver casca_devmap.py.
-            dm, dm_o = devmap.device_mapping(p["nome"], p["sigla"])
+            dm, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
             put("Device Mapping", dm)
             dm_origem[dm_o] += 1
-            dm_rows.append([p["sheet"], p["linha"], p["tipo"], p["sigla"], nome, dm, dm_o])
+            dm_rows.append([p["sheet"], p["linha"], p["tipo"], p["sigla"], nome, dm,
+                            dm_o, dm_pend or "ok"])
+            if dm_pend:
+                dm_pendentes.append({"nome": nome, "sigla": p["sigla"], "dm": dm,
+                                     "pend": dm_pend, "sheet": p["sheet"],
+                                     "linha": p["linha"], "mod": mod, "dev": dev})
             put("Input Coordinates", final[(p["sheet"], p["linha"])])
             if p["escala"] not in (None, "", "-") and tipo in ("A", "A/D"):
                 put("Scaling Factor", p["escala"])
@@ -653,7 +702,7 @@ def main():
     fbc = Counter((f["sigla"], f["molde"]) for f in usou_fallback)
     fbd = {f["sigla"]: f["desc"] for f in usou_fallback}
     _rel([[sg, mo, n, fbd.get(sg, "")] for (sg, mo), n in sorted(fbc.items(), key=lambda x: -x[1])],
-         {"linhas": dm_rows, "origem": dm_origem},
+         {"linhas": dm_rows, "origem": dm_origem, "pendentes": dm_pendentes},
          {"realoc": cmd_realoc, "orfaos": cmd_orfaos})
     print(f"relatorio: {OUT_REL.name} ({len(mapa)} coords, {len(dups)} repetidas, "
           f"{len(usou_fallback)} por equivalencia)")
