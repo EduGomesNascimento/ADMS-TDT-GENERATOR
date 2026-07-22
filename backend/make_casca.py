@@ -163,7 +163,7 @@ def sequenciar(pts):
                 val = f"{prox};{prox + 1}"; prox += 2
             else:
                 val = str(prox); prox += 1
-            final[(g, p["nome"])] = val
+            final[(p["sheet"], p["linha"])] = val
             mapa.append({**p, "grupo": g, "de": p["idx"], "para": val,
                          "mudou": "SIM" if str(p["idx"]).strip() != val else "nao"})
     return final, mapa
@@ -312,18 +312,17 @@ def main():
     TPL = {"D": idx["DNP3_DiscreteSignals"], "A": idx["DNP3_AnalogSignals"],
            "A/D": idx.get("DNP3_DiscreteAnalog", {}), "C": idx["DNP3_DiscreteSignals"]}
 
-    # NOMES duplicados na lista: o ADMS exige nome único → mantém o 1º e
-    # descarta os demais (registrados no relatório)
-    vistos = set(); descartados = []
-    limpos = []
+    # NOMES duplicados: o ADMS exige nome único, então a TDT fica com o 1º.
+    # A LISTA recebe TODOS (todo ponto SIM precisa de coordenada) — por isso o
+    # descarte marca apenas quais linhas a TDT deve pular.
+    vistos = set(); descartados = []; pular_tdt = set()
     for p in pts:
         k = (p["tipo"], p["nome"])
         if p["tipo"] in ("D", "A", "A/D") and k in vistos:
-            descartados.append(p); continue
-        vistos.add(k); limpos.append(p)
+            descartados.append(p); pular_tdt.add((p["sheet"], p["linha"])); continue
+        vistos.add(k)
     if descartados:
-        print(f"descartados por NOME duplicado: {len(descartados)}")
-    pts = limpos
+        print(f"nome duplicado (fora da TDT, mas COM coordenada na lista): {len(descartados)}")
 
     dups, semidx = diagnosticar(pts)
     print(f"diagnostico: {len(dups)} ocorrencias de coord repetida, {len(semidx)} com #REF!")
@@ -349,7 +348,10 @@ def main():
     _rel = lambda fb: gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, descartados, fb)
 
     # comandos por NOME
-    cmd = {p["nome"]: final[("C", p["nome"])] for p in pts if p["tipo"] == "C"}
+    cmd = {}
+    for p in pts:
+        if p["tipo"] == "C" and p["nome"] not in cmd:
+            cmd[p["nome"]] = final[(p["sheet"], p["linha"])]
 
     # monta as linhas da TDT
     wb = openpyxl.load_workbook(SKEL)
@@ -367,7 +369,7 @@ def main():
         L = lambda n: lab.get(n)
         rows = []
         for p in pts:
-            if p["tipo"] != tipo:
+            if p["tipo"] != tipo or (p["sheet"], p["linha"]) in pular_tdt:
                 continue
             tpl = TPL[tipo].get(p["sigla"])
             if not tpl:
@@ -397,7 +399,7 @@ def main():
             put("Signal Custom ID", None)
             put("Remote Point Custom ID", f"{p['nome']}_{RU}")
             put("Remote Unit", RU); put("Signal AOR Group", AOR)
-            put("Input Coordinates", final[(tipo, p["nome"])])
+            put("Input Coordinates", final[(p["sheet"], p["linha"])])
             if p["escala"] not in (None, "", "-") and tipo in ("A", "A/D"):
                 put("Scaling Factor", p["escala"])
             if tipo == "D":
