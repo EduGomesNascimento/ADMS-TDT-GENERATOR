@@ -66,6 +66,9 @@ def ler_lista():
                 "sigla": str(gv("SIGLA SINAL") or "").strip(),
                 "nome": str(gv("NOME") or "").strip(),
                 "idx": gv("INDEX DNP3"),
+                "desc": str(gv("DESCRIÇÃO DO PONTO") or "").strip(),
+                "escala": gv("Escala"),
+                "tipoPt": str(gv("Tipo") or "").strip(),
                 "usado": str(gv("Utilizado?") or "").strip().upper() == "SIM",
             })
     return pts
@@ -169,9 +172,11 @@ def main():
 
     print("=== 3) TDT x LISTA ===")
     porcoord = {}
+    porsinal = {}
     for sn, linhas in tdt.items():
         for x in linhas:
             porcoord[str(x.get("Signal Name"))] = str(x.get("Input Coordinates"))
+            porsinal[str(x.get("Signal Name"))] = x
     faltando, divergentes = [], []
     usados = set()          # cada sinal da TDT casa com UMA linha da lista
     for p in pts:
@@ -202,6 +207,119 @@ def main():
         falha(f"ausente na TDT: {p['sheet']}!L{p['linha']} {p['nome']}")
     for p, c in divergentes[:8]:
         falha(f"coord divergente: {p['nome']} lista={p['idx']} tdt={c}")
+
+    # mapa NOME-da-lista -> sinal da TDT (reaproveita o casamento acima)
+    casado = {}
+    usados2 = set()
+    for p in pts:
+        if not p["usado"] or p["tipo"] == "C" or not p["sigla"]:
+            continue
+        pn = p["nome"].split("_")
+        cands = ([p["nome"]] + ["_".join(pn[:2] + [f"{pn[2]}-{k}"] + pn[3:])
+                                for k in (2, 3, 4)]) if len(pn) > 3 else [p["nome"]]
+        livres = [c for c in cands if c in porsinal and c not in usados2]
+        hit = next((c for c in livres
+                    if porcoord[c].strip() == str(p["idx"]).strip()), livres[0] if livres else None)
+        if hit:
+            usados2.add(hit)
+            casado[(p["sheet"], p["linha"])] = hit
+
+    print("=== 4) COMANDOS (linhas C -> Output Coordinates) ===")
+    # comando da lista: linha C com o MESMO NOME de uma linha D
+    cmds = {}
+    for p in pts:
+        if p["tipo"] == "C" and p["usado"] and p["sigla"]:
+            cmds.setdefault(p["nome"], p)
+    ok = errado = 0
+    por_mod_sigla = {}
+    for p in pts:
+        if p["usado"] and p["tipo"] == "D":
+            pn = p["nome"].split("_")
+            por_mod_sigla.setdefault((pn[1] if len(pn) > 1 else "", p["sigla"]), p)
+    portador = {}          # NOME do comando -> sinal da TDT que o carrega
+    for nome, c in cmds.items():
+        alvo = next((p for p in pts
+                     if p["usado"] and p["tipo"] == "D" and p["nome"] == nome), None)
+        if alvo is not None:
+            sig_nome = casado.get((alvo["sheet"], alvo["linha"]))
+        else:
+            # 2) comando no disjuntor, status no modulo (CAS_LT1_52-1_25IE)
+            cn = nome.split("_")
+            alt = por_mod_sigla.get((cn[1] if len(cn) > 1 else "", c["sigla"]))
+            sig_nome = casado.get((alt["sheet"], alt["linha"])) if alt else None
+            # 3) comando puro: sinal proprio criado com o mesmo nome
+            if sig_nome is None and nome in porsinal:
+                sig_nome = nome
+        if sig_nome is None:
+            errado += 1
+            falha(f"comando sem portador na TDT: {nome} ({c['sheet']}!L{c['linha']})")
+            continue
+        portador[nome] = sig_nome
+        got = str(porsinal[sig_nome].get("Output Coordinates") or "").strip()
+        esperado = str(c["idx"]).strip()
+        if got == esperado:
+            ok += 1
+        else:
+            errado += 1
+            falha(f"Output de {nome} (em {sig_nome}): TDT={got!r} lista={esperado!r}")
+    print(f"  comandos na lista: {len(cmds)} | corretos: {ok} | problemas: {errado}")
+    # o inverso: sinal com Output que nao corresponde a nenhuma linha C
+    carregam = set(portador.values())
+    sobra = [n for n, x in porsinal.items()
+             if str(x.get("Output Coordinates") or "").strip() and n not in carregam]
+    print(f"  sinais com Output sem comando na lista: {len(sobra)}")
+    for n in sobra[:8]:
+        falha(f"tem Output mas nao ha linha C na lista: {n}")
+    # sinais criados so para carregar comando puro (Input de preenchimento)
+    filler = sorted(n for n, x in porsinal.items() if _nums(x.get("Input Coordinates"))
+                    and min(_nums(x.get("Input Coordinates"))) >= 9000)
+    print(f"  sinais com Input de preenchimento (>=9000): {len(filler)}")
+    for n in filler:
+        print(f"     {n} -> in={porsinal[n].get('Input Coordinates')} "
+              f"out={porsinal[n].get('Output Coordinates')}")
+
+    print("=== 5) DESCRICAO / ESCALA / TIPO DE PONTO ===")
+    dif_desc = dif_esc = dif_multi = 0
+    for p in pts:
+        k = casado.get((p["sheet"], p["linha"]))
+        if not k:
+            continue
+        x = porsinal[k]
+        if p["desc"] and str(x.get("Signal Alias") or "").strip() != p["desc"]:
+            dif_desc += 1
+            if dif_desc <= 5:
+                falha(f"descricao: {k} TDT={x.get('Signal Alias')!r} lista={p['desc']!r}")
+        if p["tipo"] in ("A", "A/D") and p["escala"] not in (None, "", "-"):
+            if str(x.get("Scaling Factor") or "").strip() != str(p["escala"]).strip():
+                dif_esc += 1
+                if dif_esc <= 5:
+                    falha(f"escala: {k} TDT={x.get('Scaling Factor')!r} lista={p['escala']!r}")
+        # Multi Coord na lista -> 2 coordenadas na TDT
+        if p["tipoPt"].upper().startswith("MULTI"):
+            if len(_nums(x.get("Input Coordinates"))) != 2:
+                dif_multi += 1
+                falha(f"Multi Coord com 1 coordenada: {k} = {x.get('Input Coordinates')!r}")
+    print(f"  descricoes diferentes: {dif_desc} | escalas diferentes: {dif_esc} | "
+          f"Multi Coord errados: {dif_multi}")
+
+    print("=== 6) SINAL NA TDT QUE NAO EXISTE NA LISTA ===")
+    legitimos = set(casado.values()) | set(portador.values())
+    orfaos = [n for n in porsinal if n not in legitimos]
+    print(f"  sinais orfaos: {len(orfaos)}")
+    for n in orfaos[:8]:
+        falha(f"na TDT mas nao casou com a lista: {n}")
+
+    print("=== 7) CONTAGEM POR ABA ===")
+    esperado = collections.Counter(
+        p["sheet"] for p in pts if p["usado"] and p["tipo"] != "C" and p["sigla"])
+    obtido = collections.Counter(
+        p["sheet"] for p in pts if casado.get((p["sheet"], p["linha"])))
+    for sn in sorted(esperado):
+        e, o = esperado[sn], obtido[sn]
+        marca = "ok" if e == o else "<<< DIFERENTE"
+        print(f"  {sn:<24} lista={e:>4}  tdt={o:>4}  {marca}")
+        if e != o:
+            falha(f"aba {sn}: lista tem {e} sinais, TDT tem {o}")
 
     print()
     print("OK — nenhum problema encontrado" if not erros

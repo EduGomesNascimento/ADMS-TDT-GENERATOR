@@ -50,7 +50,14 @@ DATA = Path(__file__).parent / "data"
 FALLBACK_SIGLA = {
     "FGOO": "FCOM", "TOC": "TOA",
     "81A": "81", "81P": "FALH", "81F": "FALH", "81C": "FALH",
+    "86RM": "86",          # 'REARME 86' — só existe como comando; molde = 86 BLOQUEIO
 }
+
+# Índice de ENTRADA de preenchimento para pontos que só existem como COMANDO
+# (o validador do ADMS exige Input Coordinates em todo sinal discreto).
+# Convenção do usuário: "se for impossível achar index, bote números BEEEM
+# altos como 9599 ou 9999".
+FILLER_BASE = 9599
 
 RU = "UTR_CAS_3"
 AOR = "CAS Trans"
@@ -193,7 +200,7 @@ def sequenciar(pts):
 
 # ─── relatório ───────────────────────────────────────────────────────────────
 def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
-                    fallback_rows=(), limpos=(), dm=None):
+                    fallback_rows=(), limpos=(), dm=None, cmds=None):
     wb = openpyxl.Workbook(); wb.remove(wb.active)
     bold = Font(bold=True); hdrfill = PatternFill("solid", fgColor="DDEBF7")
     warn = PatternFill("solid", fgColor="FFF2CC")
@@ -327,6 +334,17 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     sheet("9-Index antigo limpo",
           ["Aba", "Linha", "Tipo", "SIGLA", "Utilizado?", "Index ANTIGO removido"],
           list(limpos))
+
+    cmds = cmds or {"realoc": [], "orfaos": []}
+    sheet("12-Comandos resolvidos",
+          ["Situacao", "Aba", "Linha", "SIGLA", "NOME do comando",
+           "Sinal que recebeu o comando", "Coord de comando", "Input usado"],
+          [["comando no DJ, status no modulo", c["sheet"], c["linha"], c["sigla"],
+            c["nome"], c["alvo"], c["coord"], "(do proprio status)"]
+           for c in cmds["realoc"]]
+          + [["COMANDO PURO: sinal criado", c["sheet"], c["linha"], c["sigla"],
+              c["nome"], c["nome"], c["coord"],
+              f"{c.get('input', '')} (preenchimento)"] for c in cmds["orfaos"]])
 
     dm = dm or {"linhas": [], "origem": Counter()}
     sheet("10-Device Mapping",
@@ -488,14 +506,54 @@ def main():
         cnt[(p["nome"], p["tipo"])].append(p["sheet"])
     nomes_dup = [[n, t, len(s), ", ".join(sorted(set(s)))] for (n, t), s in cnt.items() if len(s) > 1]
 
-    _rel = lambda fb, dmr: gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup,
-                                           renomeados, fb, limpos, dmr)
+    _rel = lambda fb, dmr, cm: gerar_relatorio(pts, mapa, dups, semidx, sem_tpl,
+                                               nomes_dup, renomeados, fb, limpos,
+                                               dmr, cm)
 
-    # comandos por NOME (só linhas C efetivamente utilizadas)
-    cmd = {}
+    # ── comandos: cada linha C precisa achar o sinal D que vai carregá-lo ──
+    # 1) NOME idêntico (caso normal)
+    # 2) mesmo MÓDULO + mesma SIGLA — a lista às vezes põe o comando no
+    #    disjuntor e o status no módulo (CAS_LT1_52-1_25IE x CAS_LT1_LT1_25IE)
+    # 3) sobrou: é comando PURO, vira um sinal novo com Input de preenchimento
+    cmd = {}                       # NOME do sinal D -> coordenada de comando
+    cmd_orfaos = []                # linhas C sem nenhum D -> sinal proprio
+    cmd_realoc = []                # casadas pela regra 2 (vao pro relatorio)
+    d_por_nome = {p["nome"]: p for p in pts if p["usado"] and p["tipo"] == "D"}
+    d_por_mod_sigla = {}
     for p in pts:
-        if p["tipo"] == "C" and p["usado"] and p["nome"] not in cmd:
-            cmd[p["nome"]] = final[(p["sheet"], p["linha"])]
+        if p["usado"] and p["tipo"] == "D":
+            parts = p["nome"].split("_")
+            d_por_mod_sigla.setdefault((parts[1] if len(parts) > 1 else "",
+                                        p["sigla"]), p)
+    for p in pts:
+        if p["tipo"] != "C" or not p["usado"] or not p["sigla"]:
+            continue
+        coord = final[(p["sheet"], p["linha"])]
+        alvo = d_por_nome.get(p["nome"])
+        if alvo is None:
+            parts = p["nome"].split("_")
+            alvo = d_por_mod_sigla.get((parts[1] if len(parts) > 1 else "", p["sigla"]))
+            if alvo is not None:
+                cmd_realoc.append({**p, "alvo": alvo["nome"], "coord": coord})
+        if alvo is None:
+            cmd_orfaos.append({**p, "coord": coord})
+            continue
+        cmd.setdefault(alvo["nome"], coord)
+    if cmd_realoc:
+        print(f"comando casado por MODULO+SIGLA (nome do device difere): {len(cmd_realoc)}")
+    # comando puro vira um sinal discreto próprio, com Input de preenchimento
+    sinteticos = []
+    for i, o in enumerate(cmd_orfaos):
+        chave = (f"{o['sheet']} (comando)", o["linha"])
+        o["input"] = str(FILLER_BASE + i)
+        final[chave] = o["input"]
+        cmd.setdefault(o["nome"], o["coord"])
+        sinteticos.append({**o, "tipo": "D", "sheet": chave[0], "linha": chave[1],
+                           "idx": o["input"], "tipoPt": "Ponto Simples"})
+    pts_tdt = pts + sinteticos
+    if cmd_orfaos:
+        print(f"comando PURO (sem sinal de status na lista): {len(cmd_orfaos)} "
+              f"-> sinal novo com Input {FILLER_BASE}+")
 
     # monta as linhas da TDT
     wb = openpyxl.load_workbook(SKEL)
@@ -513,7 +571,7 @@ def main():
             ws.delete_rows(HEADER_ROWS + 1, ws.max_row - HEADER_ROWS)
         L = lambda n: lab.get(n)
         rows = []
-        for p in pts:
+        for p in pts_tdt:
             if p["tipo"] != tipo or not p["usado"]:
                 continue
             tpl = TPL[tipo].get(p["sigla"])
@@ -595,7 +653,8 @@ def main():
     fbc = Counter((f["sigla"], f["molde"]) for f in usou_fallback)
     fbd = {f["sigla"]: f["desc"] for f in usou_fallback}
     _rel([[sg, mo, n, fbd.get(sg, "")] for (sg, mo), n in sorted(fbc.items(), key=lambda x: -x[1])],
-         {"linhas": dm_rows, "origem": dm_origem})
+         {"linhas": dm_rows, "origem": dm_origem},
+         {"realoc": cmd_realoc, "orfaos": cmd_orfaos})
     print(f"relatorio: {OUT_REL.name} ({len(mapa)} coords, {len(dups)} repetidas, "
           f"{len(usou_fallback)} por equivalencia)")
     print(f"device mapping: {len(dm_rows)} sinais | origem: {dm_origem.most_common()}")
