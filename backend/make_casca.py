@@ -36,6 +36,18 @@ OUT_TDT = Path("C:/Users/egnpo/Downloads/TDT_CASCA_UTR_CAS_3.xlsx")
 OUT_REL = Path("C:/Users/egnpo/Downloads/CASCA_RELATORIO.xlsx")
 DATA = Path(__file__).parent / "data"
 
+# DE-PARA das siglas da lista sem template na base — usa a linha-molde da
+# variante equivalente (o NOME/SIGLA da lista é preservado; só o template vem
+# da outra). Confirmado nas listas padrão RGE/ADMS + descrições da lista Casca:
+#   FGOO 'FALHA GOOSE'                    -> FCOM 'FALHA COMUNICACAO' (mesma natureza)
+#   TOC  '26 - ALARME TEMP OLEO CDC'      -> 2649 '26_49 FUNCAO'      (família 26)
+#   81A  '81 - FUNCAO RECOMPOSICAO ERAC'  -> 81   '81 FUNCAO'         (comandável)
+#   81P/81F/81C (estados do ERAC)         -> 81E1 '81 ESTAGIO 1'      (status)
+FALLBACK_SIGLA = {
+    "FGOO": "FCOM", "TOC": "2649",
+    "81A": "81", "81P": "81E1", "81F": "81E1", "81C": "81E1",
+}
+
 RU = "UTR_CAS_3"
 AOR = "CAS Trans"
 FABRICANTE = "ELIPSE"
@@ -144,7 +156,7 @@ def realocar(pts):
 
 
 # ─── relatório ───────────────────────────────────────────────────────────────
-def gerar_relatorio(pts, realoc, sem_tpl, nomes_dup, descartados=()):
+def gerar_relatorio(pts, realoc, sem_tpl, nomes_dup, descartados=(), fallback_rows=()):
     wb = openpyxl.Workbook(); wb.remove(wb.active)
     bold = Font(bold=True); hdrfill = PatternFill("solid", fgColor="DDEBF7")
     warn = PatternFill("solid", fgColor="FFF2CC")
@@ -190,6 +202,10 @@ def gerar_relatorio(pts, realoc, sem_tpl, nomes_dup, descartados=()):
           [[d["sheet"], d["linha"], d["tipo"], d["sigla"], d["nome"], d["idx"]]
            for d in descartados])
 
+    sheet("6-Siglas por equivalencia",
+          ["SIGLA da lista", "Molde usado", "Qtde", "Descricao na lista"],
+          fallback_rows)
+
     buf = io.BytesIO(); wb.save(buf)
     OUT_REL.write_bytes(buf.getvalue())
 
@@ -224,7 +240,7 @@ def main():
     for p in pts:
         if p["tipo"] == "C":
             continue
-        if p["sigla"] not in TPL.get(p["tipo"], {}):
+        if p["sigla"] not in TPL.get(p["tipo"], {}) and FALLBACK_SIGLA.get(p["sigla"]) not in TPL.get(p["tipo"], {}):
             d = sem_tpl[p["sigla"]]; d["n"] += 1; d["sheets"].add(p["sheet"])
             if len(d["nomes"]) < 3: d["nomes"].append(p["nome"])
     cnt = defaultdict(list)
@@ -232,9 +248,7 @@ def main():
         cnt[(p["nome"], p["tipo"])].append(p["sheet"])
     nomes_dup = [[n, t, len(s), ", ".join(sorted(set(s)))] for (n, t), s in cnt.items() if len(s) > 1]
 
-    gerar_relatorio(pts, realoc, sem_tpl, nomes_dup, descartados)
-    print(f"relatorio: {OUT_REL.name} ({len(realoc)} realoc, {len(sem_tpl)} siglas sem tpl, "
-          f"{len(nomes_dup)} nomes dup)")
+    _rel = lambda fb: gerar_relatorio(pts, realoc, sem_tpl, nomes_dup, descartados, fb)
 
     # comandos por NOME
     cmd = {p["nome"]: final[("C", p["nome"])] for p in pts if p["tipo"] == "C"}
@@ -243,7 +257,7 @@ def main():
     wb = openpyxl.load_workbook(SKEL)
     plano = [("DNP3_DiscreteSignals", "D"), ("DNP3_AnalogSignals", "A"),
              ("DNP3_DiscreteAnalog", "A/D")]
-    gerados = defaultdict(int); pulados = 0
+    gerados = defaultdict(int); pulados = 0; usou_fallback = []
     for sheet, tipo in plano:
         ws = wb[sheet]
         lab = {ws.cell(HEADER_ROWS, c).value: c for c in range(1, ws.max_column + 1)
@@ -258,6 +272,11 @@ def main():
             if p["tipo"] != tipo:
                 continue
             tpl = TPL[tipo].get(p["sigla"])
+            if not tpl:
+                alt = FALLBACK_SIGLA.get(p["sigla"])
+                tpl = TPL[tipo].get(alt) if alt else None
+                if tpl:
+                    usou_fallback.append({**p, "molde": alt})
             if not tpl:
                 pulados += 1
                 continue
@@ -315,6 +334,13 @@ def main():
     putr("Remote Unit Description", FABRICANTE)
     putr("Container Name", CONTAINER)
     putr("Container Custom ID", None)
+
+    from collections import Counter as _C
+    fbc = _C((f["sigla"], f["molde"]) for f in usou_fallback)
+    fbd = {f["sigla"]: f["desc"] for f in usou_fallback}
+    _rel([[sg, mo, n, fbd.get(sg, "")] for (sg, mo), n in sorted(fbc.items(), key=lambda x: -x[1])])
+    print(f"relatorio: {OUT_REL.name} ({len(realoc)} realoc, {len(sem_tpl)} sem tpl, "
+          f"{len(usou_fallback)} por equivalencia)")
 
     buf = io.BytesIO(); wb.save(buf)
     OUT_TDT.write_bytes(excel_native.resave_native(buf.getvalue()))
