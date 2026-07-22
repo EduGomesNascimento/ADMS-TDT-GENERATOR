@@ -270,22 +270,23 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            ["Device Mapping da TDT precisa conter EXATAMENTE esse texto, senao o"],
            ["ADMS responde 'Could not find any device that corresponds to...'."],
            [""],
-           ["PROBLEMA: o Casca_Obra e um clone da CASCA ATUAL. Ele tem"],
-           ["  AL12 AL13 AL14 AL15 AL21 · LTSCO LTPRI LTMRU · TR1 TR2 (+AT/BT)"],
-           ["  B138 BP23 TSA3"],
-           ["e a lista NOVA pede tambem"],
-           ["  AL24 AL25 AL26 · BC1(AL18) BC2(AL28) · LT1 LT2 LT3 · TR6 TR7"],
-           ["  IB20 · 24-1(AL18) 24-2(TRF29) · BP69 BP113.8 BP213.8 · TSA1 TSA2"],
-           ["Esses dispositivos AINDA NAO EXISTEM no diagrama — nenhuma TDT"],
-           ["resolve isso, tem que ser criado no modelo. A aba 13 lista um por um."],
+           ["PROBLEMA: o Casca_Obra e um clone da CASCA ATUAL, e a lista nova"],
+           ["descreve OUTRA instalacao eletrica (reconstrucao):"],
+           ["  ATUAL: BARRA P1/P2 138kV · BARRA P3/T1 23kV · TR1 15/20/25 MVA e"],
+           ["         TR2 10/12,5 MVA · LT KVM/PRI/SCO · AL12..AL15 AL21 · TSA-3"],
+           ["  NOVA : LT 69kV (LT1 LT2 LT3) · TR 69/13,8kV (TR6 TR7) · BP69 ·"],
+           ["         BP1 13.8 / BP2 13.8 · AL12..AL15 AL21 AL24 AL25 AL26 ·"],
+           ["         BC1 BC2 · interbarras 20 · transf. 24-1 e 24-2 · TSA1 TSA2"],
+           ["Ate os vaos que mantem o nome foram renumerados por inteiro"],
+           ["(AL12: 52-02/29-06/29-08/29-10 --> 52-12/29-48/29-50/29-52)."],
            [""],
-           ["O QUE FOI RESOLVIDO AUTOMATICAMENTE"],
-           ["  1) texto igual ao do modelo -> usado direto"],
-           ["  2) so o numero do equipamento mudou (AL12 usa 52-2 no modelo e"],
-           ["     52-12 na lista) -> vale o texto do modelo"],
-           ["  3) rele especifico inexistente -> rele generico _PROT do vao"],
-           ["  4) ainda sem alternativa -> DISJUNTOR (instrucao do usuario)"],
-           ["Auditoria: aba 10 (sinal a sinal), 11 (resumo), 14 (rebaixados)."],
+           ["DECISAO: vale o nome CANONICO CAS_{MOD}_{DEV}_{TIPO}. Nao"],
+           ["reaproveitamos dispositivo antigo — o cubiculo de 23kV sai de"],
+           ["operacao, e apontar sinal novo pra ele deixaria o sinal pendurado"],
+           ["num equipamento que vai ser removido. Assim que o dispositivo for"],
+           ["criado no Casca_Obra com esse ID de Mapeamento SCADA, o sinal casa"],
+           ["sozinho — nada precisa ser refeito na TDT."],
+           ["A aba 13 lista, um a um, TODOS os dispositivos a criar."],
            [""],
            ["A LISTA CORRIGIDA ABRE SEM REPARO"],
            ["As formulas foram congeladas no valor calculado e o vinculo externo"],
@@ -368,7 +369,7 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     # o que precisa ser CRIADO no Casca_Obra para os sinais mapearem
     falta = OrderedDict()
     for x in dm.get("pendentes", []):
-        if not x["pend"].startswith("MODULO"):
+        if not x["pend"].startswith(("MODULO", "criar ")):
             continue
         d = falta.setdefault(x["dm"], {"n": 0, "mod": x["mod"], "dev": x["dev"],
                                        "ex": []})
@@ -393,7 +394,8 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     sheet("14-DM rebaixado",
           ["NOME na TDT", "SIGLA", "Device Mapping usado", "Motivo"],
           [[x["nome"], x["sigla"], x["dm"], x["pend"]]
-           for x in dm.get("pendentes", []) if not x["pend"].startswith("MODULO")])
+           for x in dm.get("pendentes", [])
+           if not x["pend"].startswith(("MODULO", "criar "))])
     sheet("11-DM origem (resumo)",
           ["Origem", "Qtde", "O que significa"],
           [[o, n, {"TDT atual": "sigla existe na TDT atual da CASCA — regra copiada",

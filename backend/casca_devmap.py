@@ -37,6 +37,25 @@ import re
 from pathlib import Path
 import openpyxl
 
+# ─────────────────────────────────────────────────────────────────────────────
+# O unifilar da CASCA atual (foto do ADMS) x a lista nova mostram que NÃO é a
+# mesma instalação elétrica — é uma reconstrução:
+#   atual : BARRA P1/P2 138 kV · BARRA P3/T1 23 kV · TR1 15/20/25 MVA ·
+#           TR2 10/12,5 MVA · LT KVM/PRI/SCO · AL12..AL15 AL21 · TSA-3
+#   nova  : LT 69 kV (LT1 LT2 LT3) · TR 69/13,8 kV (TR6 TR7) · BP69 ·
+#           BP1 13.8 / BP2 13.8 · AL12..AL15 AL21 AL24 AL25 AL26 ·
+#           BC1 BC2 · interbarras 20 · transferências 24-1 24-2 · TSA1 TSA2
+# Até os vãos que mantêm o nome foram renumerados por completo
+# (AL12: 52-02/29-06/29-08/29-10 -> 52-12/29-48/29-50/29-52).
+#
+# Por isso NÃO reaproveitamos dispositivo antigo: o cubículo de 23 kV sai de
+# operação, apontar sinal novo pra ele deixaria o sinal pendurado num
+# equipamento que vai ser removido. Vale o nome CANÔNICO, que casa sozinho
+# assim que o dispositivo for criado no Casca_Obra com esse ID.
+# Para voltar a reaproveitar (se o César confirmar que é renumeração e não
+# troca), basta ligar a chave abaixo.
+REAPROVEITAR_DISPOSITIVO_ANTIGO = False
+
 MODELO = Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CASCA.xml")
 TDT_ATUAL = Path("C:/Users/egnpo/Downloads/CASCA.xlsx")
 PROP_SCADA_ID = "1224979098644840199"
@@ -177,7 +196,7 @@ def resolver(nome: str, sigla: str) -> tuple[str, str, str]:
     if canonico in cat["validos"]:
         return canonico, f"{origem} + modelo (exato)", ""
 
-    domod = cat["por_mod"].get(mod)
+    domod = cat["por_mod"].get(mod) if REAPROVEITAR_DISPOSITIVO_ANTIGO else None
     if domod:
         # 1) mesmo sufixo, equipamento renumerado (AL12: 52-12 -> 52-2)
         if suf in domod:
@@ -194,7 +213,9 @@ def resolver(nome: str, sigla: str) -> tuple[str, str, str]:
         if "DJ" in domod:
             return domod["DJ"], f"{origem} + modelo (disjuntor)", \
                 f"{suf} nao existe em {mod}"
-    return canonico, origem, f"MODULO {mod} nao existe no Casca_Obra"
+    existe_mod = mod in cat["por_mod"]
+    return canonico, origem, (f"criar {suf} no vao {mod} do Casca_Obra" if existe_mod
+                              else f"MODULO {mod} nao existe no Casca_Obra")
 
 
 def device_mapping(nome: str, sigla: str) -> tuple[str, str]:
