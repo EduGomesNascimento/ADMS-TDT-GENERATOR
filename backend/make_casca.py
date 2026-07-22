@@ -321,6 +321,11 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
 
     mudou = [m for m in mapa if m["mudou"] == "SIM"]
     alta = [a for a in avisos if a[0] == "ALTA"]
+    _val = devmap.catalogo()["validos"]
+    _linhas = (dm or {}).get("linhas", [])
+    n_ok = sum(1 for r in _linhas if r[5] in _val)
+    n_reb = sum(1 for r in _linhas if r[5] in _val and r[7] != "ok")
+    n_pend = len(_linhas) - n_ok
     sheet("0-LEIA-ME",
           ["O PROBLEMA E A SOLUCAO"],
           [["PROBLEMA ENCONTRADO NA LISTA DE PONTOS"],
@@ -380,23 +385,32 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            ["Device Mapping da TDT precisa conter EXATAMENTE esse texto, senao o"],
            ["ADMS responde 'Could not find any device that corresponds to...'."],
            [""],
-           ["PROBLEMA: o Casca_Obra e um clone da CASCA ATUAL, e a lista nova"],
-           ["descreve OUTRA instalacao eletrica (reconstrucao):"],
-           ["  ATUAL: BARRA P1/P2 138kV · BARRA P3/T1 23kV · TR1 15/20/25 MVA e"],
-           ["         TR2 10/12,5 MVA · LT KVM/PRI/SCO · AL12..AL15 AL21 · TSA-3"],
-           ["  NOVA : LT 69kV (LT1 LT2 LT3) · TR 69/13,8kV (TR6 TR7) · BP69 ·"],
-           ["         BP1 13.8 / BP2 13.8 · AL12..AL15 AL21 AL24 AL25 AL26 ·"],
-           ["         BC1 BC2 · interbarras 20 · transf. 24-1 e 24-2 · TSA1 TSA2"],
-           ["Ate os vaos que mantem o nome foram renumerados por inteiro"],
-           ["(AL12: 52-02/29-06/29-08/29-10 --> 52-12/29-48/29-50/29-52)."],
+           ["REGRA DO PROJETO: a LISTA manda nos SINAIS, o UNIFILAR manda nos"],
+           ["DISPOSITIVOS ('o que esta no campo real e o que esta no ADMS')."],
            [""],
-           ["DECISAO: vale o nome CANONICO CAS_{MOD}_{DEV}_{TIPO}. Nao"],
-           ["reaproveitamos dispositivo antigo — o cubiculo de 23kV sai de"],
-           ["operacao, e apontar sinal novo pra ele deixaria o sinal pendurado"],
-           ["num equipamento que vai ser removido. Assim que o dispositivo for"],
-           ["criado no Casca_Obra com esse ID de Mapeamento SCADA, o sinal casa"],
-           ["sozinho — nada precisa ser refeito na TDT."],
-           ["A aba 13 lista, um a um, TODOS os dispositivos a criar."],
+           ["A lista renumerou tudo em relacao ao unifilar:"],
+           ["  UNIFILAR: BARRA P1/P2 138kV · BARRA P3/T1 23kV · TR1 15/20/25 e"],
+           ["            TR2 10/12,5 MVA · LT KVM/PRI/SCO · AL12..AL15 AL21 · TSA-3"],
+           ["  LISTA   : LT 69kV (LT1 LT2 LT3) · TR 69/13,8kV (TR6 TR7) · BP69 ·"],
+           ["            BP1/BP2 13.8 · AL12..AL15 AL21 AL24 AL25 AL26 · BC1 BC2 ·"],
+           ["            interbarras 20 · transf. 24-1 e 24-2 · TSA1 TSA2"],
+           ["Ate os vaos que mantem o nome mudaram de numero"],
+           ["(AL12: 52-12/29-48/29-50/29-52 na lista = 52-02/29-06/29-08/29-10"],
+           ["no unifilar)."],
+           [""],
+           ["ENTAO O DEVICE MAPPING SEGUE O UNIFILAR. Ordem de resolucao:"],
+           ["  1) texto identico a um ID de Mapeamento SCADA do modelo"],
+           ["  2) equivalencia de vao (LT1->LT SCO, TR6->TR1...) — ABA 16"],
+           ["  3) mesmo vao, equipamento renumerado (52-12 -> 52-2)"],
+           ["  4) rele especifico inexistente -> rele generico _PROT do vao"],
+           ["  5) dispositivo inexistente -> o equivalente do vao (o TR1 entra"],
+           ["     por seccionadora 89-12, nao tem disjuntor AT) — ABA 14"],
+           ["  6) vao que NAO existe no unifilar -> nome canonico + ABA 13"],
+           [""],
+           ["A EQUIVALENCIA DE VAOS ESTA NA ABA 16, com a evidencia e o grau de"],
+           ["confianca de cada uma. Se alguma estiver errada, e so corrigir a"],
+           ["tabela MODULO_EQUIV em backend/casca_devmap.py e rodar de novo —"],
+           ["esta tudo num lugar so."],
            [""],
            ["A LISTA CORRIGIDA ABRE SEM REPARO"],
            ["As formulas foram congeladas no valor calculado e o vinculo externo"],
@@ -420,7 +434,10 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            ["NOMES duplicados (renomeados)", len(renomeados), "ver aba 6 — todos na TDT"],
            ["Index antigo limpo (nao utilizado)", len(limpos), "ver aba 9"],
            ["AVISOS p/ o modelo (severidade ALTA)", len(alta), "ver aba 15"],
-           ["Dispositivos a CRIAR no Casca_Obra", "ver aba 13", "sem eles o sinal nao mapeia"],
+           ["Sinais que MAPEIAM no unifilar", n_ok, "Device Mapping ja existe no modelo"],
+           ["  .. com dispositivo rebaixado", n_reb, "ver aba 14 — mapeia, mas confira"],
+           ["Sinais SEM dispositivo no unifilar", n_pend, "ver aba 13 — criar no Casca_Obra"],
+           ["Equivalencia de vaos aplicada", len(devmap.MODULO_EQUIV), "ver aba 16"],
            ["UTR", RU, f"nova, DNP3, {FABRICANTE}, AOR {AOR}"],
            ["Container da RTU", CONTAINER, "informado pelo usuario"]])
 
@@ -507,6 +524,18 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
                           "Rele de protecao (PROTECTEQP)" if "_PROT" in k else "?"),
             v["n"], ", ".join(v["ex"])]
            for k, v in sorted(falta.items(), key=lambda x: -x[1]["n"])])
+
+    cat = devmap.catalogo()
+    sheet("16-Equivalencia de modulos",
+          ["Modulo na LISTA", "Vao no UNIFILAR/ADMS", "Confianca", "Evidencia",
+           "Existe no modelo?"],
+          [[k, v[0], v[1], v[2], "SIM" if v[0] in cat["por_mod"] else "NAO"]
+           for k, v in sorted(devmap.MODULO_EQUIV.items())]
+          + [[m, "(sem equivalente)", "-",
+              "vao nao existe no unifilar — sinais ficam com o nome canonico",
+              "NAO"]
+             for m in sorted({x["mod"] for x in dm.get("pendentes", [])
+                              if x["pend"].startswith("vao ")})])
 
     sheet("14-DM rebaixado",
           ["NOME na TDT", "SIGLA", "Device Mapping usado", "Motivo"],
@@ -828,7 +857,11 @@ def main():
          {"realoc": cmd_realoc, "orfaos": cmd_orfaos})
     print(f"relatorio: {OUT_REL.name} ({len(mapa)} coords, {len(dups)} repetidas, "
           f"{len(usou_fallback)} por equivalencia)")
-    print(f"device mapping: {len(dm_rows)} sinais | origem: {dm_origem.most_common()}")
+    _val = devmap.catalogo()["validos"]
+    _ok = sum(1 for r in dm_rows if r[5] in _val)
+    _reb = sum(1 for r in dm_rows if r[5] in _val and r[7] != "ok")
+    print(f"device mapping: {len(dm_rows)} sinais | mapeiam no unifilar: {_ok} "
+          f"({_reb} com dispositivo rebaixado) | sem dispositivo: {len(dm_rows) - _ok}")
 
     buf = io.BytesIO(); wb.save(buf)
     OUT_TDT.write_bytes(excel_native.resave_native(buf.getvalue()))

@@ -38,23 +38,51 @@ from pathlib import Path
 import openpyxl
 
 # ─────────────────────────────────────────────────────────────────────────────
-# O unifilar da CASCA atual (foto do ADMS) x a lista nova mostram que NÃO é a
-# mesma instalação elétrica — é uma reconstrução:
-#   atual : BARRA P1/P2 138 kV · BARRA P3/T1 23 kV · TR1 15/20/25 MVA ·
-#           TR2 10/12,5 MVA · LT KVM/PRI/SCO · AL12..AL15 AL21 · TSA-3
-#   nova  : LT 69 kV (LT1 LT2 LT3) · TR 69/13,8 kV (TR6 TR7) · BP69 ·
-#           BP1 13.8 / BP2 13.8 · AL12..AL15 AL21 AL24 AL25 AL26 ·
-#           BC1 BC2 · interbarras 20 · transferências 24-1 24-2 · TSA1 TSA2
-# Até os vãos que mantêm o nome foram renumerados por completo
-# (AL12: 52-02/29-06/29-08/29-10 -> 52-12/29-48/29-50/29-52).
+# REGRA DO PROJETO (decisão do usuário):
+#   "seguir com as informações do unifilar, só usando os sinais da lista mesmo,
+#    mas o que está no campo real é o que está no adms/unifilar"
 #
-# Por isso NÃO reaproveitamos dispositivo antigo: o cubículo de 23 kV sai de
-# operação, apontar sinal novo pra ele deixaria o sinal pendurado num
-# equipamento que vai ser removido. Vale o nome CANÔNICO, que casa sozinho
-# assim que o dispositivo for criado no Casca_Obra com esse ID.
-# Para voltar a reaproveitar (se o César confirmar que é renumeração e não
-# troca), basta ligar a chave abaixo.
-REAPROVEITAR_DISPOSITIVO_ANTIGO = False
+# Ou seja: a LISTA manda nos SINAIS (nome, tipo, índice, comando, escala) e o
+# UNIFILAR/ADMS manda nos DISPOSITIVOS. O Device Mapping tem que apontar para
+# o que existe no Casca_Obra, mesmo quando a lista usa outra numeração.
+#
+# A lista renumerou tudo em relação ao unifilar:
+#   unifilar : BARRA P1/P2 138 kV · BARRA P3/T1 23 kV · TR1 15/20/25 MVA ·
+#              TR2 10/12,5 MVA · LT KVM/PRI/SCO · AL12..AL15 AL21 · TSA-3
+#   lista    : LT 69 kV (LT1 LT2 LT3) · TR 69/13,8 kV (TR6 TR7) · BP69 ·
+#              BP1 13.8 / BP2 13.8 · AL12..AL15 AL21 AL24 AL25 AL26 ·
+#              BC1 BC2 · interbarras 20 · transf. 24-1 24-2 · TSA1 TSA2
+REAPROVEITAR_DISPOSITIVO_ANTIGO = True
+
+# ── equivalência MÓDULO da lista -> MÓDULO do unifilar/ADMS ──────────────────
+# (destino, confianca, evidencia). Editar SÓ aqui muda todo o mapeamento.
+# Módulo que não está nesta tabela e não existe no modelo fica PENDENTE.
+MODULO_EQUIV = {
+    # ── linhas 138 kV: a chave de aterramento (SECG 29-x) manteve o número ──
+    "LT1": ("LTSCO", "ALTA",
+            "SECG 29-1 na lista = 29-01 do LT SCO no unifilar"),
+    "LT2": ("LTPRI", "ALTA",
+            "SECG 29-3 na lista = 29-03 do LT PRI no unifilar"),
+    "LT3": ("LTMRU", "ALTA",
+            "SECG 29-5 na lista = 29-05 do LT KVM (LTMRU no modelo)"),
+    # ── transformadores: aba 'TR 1' = modulo 6, aba 'TR 2' = modulo 7 ──
+    "TR6":   ("TR1",   "MEDIA", "aba 'TR 1' da lista -> TR1 do unifilar"),
+    "TR6AT": ("TR1AT", "MEDIA", "lado AT do TR1"),
+    "TR6BT": ("TR1BT", "MEDIA", "lado BT do TR1"),
+    "TR7":   ("TR2",   "MEDIA", "aba 'TR 2' da lista -> TR2 do unifilar"),
+    "TR7AT": ("TR2AT", "MEDIA", "lado AT do TR2"),
+    "TR7BT": ("TR2BT", "MEDIA", "lado BT do TR2"),
+    # ── barras ──
+    "BP69":    ("B138", "MEDIA", "barra de ALTA; no unifilar e a BARRA P1 138 kV"),
+    "BP113.8": ("BP23", "MEDIA", "barra de BAIXA 1; no unifilar e a BARRA P3 23 kV"),
+    # ── servico auxiliar: o unifilar so tem o TSA-3 ──
+    "TSA1": ("TSA3", "BAIXA", "unico TSA do unifilar (TSA-3 45 kVA)"),
+    "TSA":  ("TSA3", "BAIXA", "modulo generico das abas RET"),
+    # SEM equivalente no unifilar (o vao nao existe no campo hoje):
+    #   AL24 AL25 AL26 · AL18 (BC 1 e transf. 24-1) · AL28 (BC 2) ·
+    #   TRF29 (transf. 24-2) · IB20 (interbarras BT) · BP213.8 · TSA2
+    # Esses ficam com o nome canonico e entram na aba 13 do relatorio.
+}
 
 MODELO = Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CASCA.xml")
 TDT_ATUAL = Path("C:/Users/egnpo/Downloads/CASCA.xlsx")
@@ -84,10 +112,18 @@ _MEDIDA_TC = {"IA", "IB", "IC", "IN", "IACC", "IBCC", "ICCC", "INCC", "P", "Q", 
 _MEDIDA_TP = {"V", "VA", "VB", "VC", "VA_B", "VB_B", "VC_B", "VA_L", "VB_L",
               "VC_L", "VAB", "VBC", "VCA", "F"}
 # ordem de rebaixamento dentro de um módulo que existe no modelo
+# Rebaixamento dentro de um vão que EXISTE no unifilar mas não tem aquele
+# dispositivo. Ex.: o TR1 do unifilar entra por seccionadora (89-12), não tem
+# disjuntor de alta — os sinais do "52-4" da lista vão para a seccionadora.
 _DEGRADA = {
-    "COMTAP": ("TR", "DJ"), "TAP_REG": ("TR", "DJ"), "TR": ("DJ",),
-    "TC": ("TP", "DJ"), "TP": ("TC", "DJ"), "SEC": ("DJ",), "DJ": (),
+    "COMTAP": ("TR", "DJ", "SEC"), "TAP_REG": ("TR", "DJ", "SEC"),
+    "TR": ("BP", "DJ", "SEC"), "BP": ("TP", "TC", "DJ"),
+    "TC": ("TP", "DJ", "SEC"), "TP": ("TC", "DJ", "SEC"),
+    "SEC": ("DJ", "TR", "BP"), "RET": ("TC", "DJ"),
+    "DJ": ("SEC", "TR", "BP", "RET", "TC"),
 }
+# última tentativa: qualquer dispositivo do vão, nesta ordem de preferência
+_ULTIMO_RECURSO = ("DJ", "SEC", "PROT", "TR", "BP", "TC", "TP", "RET")
 
 _CACHE = {}
 
@@ -196,26 +232,38 @@ def resolver(nome: str, sigla: str) -> tuple[str, str, str]:
     if canonico in cat["validos"]:
         return canonico, f"{origem} + modelo (exato)", ""
 
-    domod = cat["por_mod"].get(mod) if REAPROVEITAR_DISPOSITIVO_ANTIGO else None
+    # módulo da lista -> módulo do unifilar (o campo real manda no dispositivo)
+    equiv = MODULO_EQUIV.get(mod)
+    mod_alvo = equiv[0] if equiv else mod
+    nota = f" [{mod}->{mod_alvo}]" if equiv else ""
+
+    domod = cat["por_mod"].get(mod_alvo) if REAPROVEITAR_DISPOSITIVO_ANTIGO else None
     if domod:
+        # o alvo pode ter o sufixo com o device do unifilar; tenta o exato dele
+        if equiv and f"{alias}_{mod_alvo}_{dev}_{suf}" in cat["validos"]:
+            return f"{alias}_{mod_alvo}_{dev}_{suf}", \
+                f"{origem} + unifilar (exato){nota}", ""
         # 1) mesmo sufixo, equipamento renumerado (AL12: 52-12 -> 52-2)
         if suf in domod:
-            return domod[suf], f"{origem} + modelo (equip. renumerado)", ""
+            return domod[suf], f"{origem} + unifilar (equip. renumerado){nota}", ""
         # 2) relé específico não existe -> relé genérico do vão
         if suf.startswith("PROT_") and "PROT" in domod:
-            return domod["PROT"], f"{origem} + modelo (rele generico)", \
-                f"rele {suf} nao existe em {mod}"
+            return domod["PROT"], f"{origem} + unifilar (rele generico){nota}", \
+                f"rele {suf} nao existe no vao {mod_alvo} do unifilar"
         # 3) rebaixa por tipo de dispositivo
         for alt in _DEGRADA.get(suf, ()):
             if alt in domod:
-                return domod[alt], f"{origem} + modelo (fallback {alt})", \
-                    f"{suf} nao existe em {mod}"
-        if "DJ" in domod:
-            return domod["DJ"], f"{origem} + modelo (disjuntor)", \
-                f"{suf} nao existe em {mod}"
-    existe_mod = mod in cat["por_mod"]
-    return canonico, origem, (f"criar {suf} no vao {mod} do Casca_Obra" if existe_mod
-                              else f"MODULO {mod} nao existe no Casca_Obra")
+                return domod[alt], f"{origem} + unifilar (fallback {alt}){nota}", \
+                    f"{suf} nao existe no vao {mod_alvo} do unifilar"
+        # 4) último recurso: qualquer dispositivo do vão
+        for alt in _ULTIMO_RECURSO:
+            if alt in domod:
+                return domod[alt], f"{origem} + unifilar (ultimo recurso {alt}){nota}", \
+                    f"{suf} nao existe no vao {mod_alvo} do unifilar"
+    existe_mod = mod_alvo in cat["por_mod"]
+    return canonico, origem, (f"criar {suf} no vao {mod_alvo} do Casca_Obra"
+                              if existe_mod
+                              else f"vao {mod} nao existe no unifilar/ADMS")
 
 
 def device_mapping(nome: str, sigla: str) -> tuple[str, str]:
