@@ -113,53 +113,64 @@ def _nums(idx: str):
     return out
 
 
-# ─── realocação de coordenadas duplicadas ────────────────────────────────────
-def realocar(pts):
-    """Mantém o 1º ocupante; realoca duplicados p/ a 1ª coord livre acima do topo.
-    Retorna (mapa nome->coords finais por grupo, lista de realocações)."""
-    grupos = {"D": [p for p in pts if p["tipo"] == "D"],
-              "A": [p for p in pts if p["tipo"] == "A"],
-              "C": [p for p in pts if p["tipo"] == "C"],
-              "A/D": [p for p in pts if p["tipo"] == "A/D"]}
-    realoc = []
-    final = {}
-    for g, lst in grupos.items():
-        usados = set()
-        topo = max((n for p in lst for n in _nums(p["idx"])), default=0)
-        prox = topo + 1
-        for p in lst:
+# ─── diagnóstico das duplicatas da lista ─────────────────────────────────────
+def diagnosticar(pts):
+    """Evidencia as coordenadas repetidas na lista ORIGINAL (célula a célula)."""
+    ocup = defaultdict(list)
+    for p in pts:
+        for n in _nums(p["idx"]):
+            ocup[(p["tipo"], n)].append(p)
+    dups = []
+    for (g, n), lst in sorted(ocup.items(), key=lambda x: (x[0][0], x[0][1])):
+        if len(lst) > 1:
+            abas = {p["sheet"] for p in lst}
+            for p in lst:
+                dups.append({**p, "grupo": g, "coord": n,
+                             "escopo": "ENTRE MODULOS" if len(abas) > 1 else "DENTRO DO MODULO",
+                             "conflita_com": ", ".join(
+                                 f'{q["sheet"]}!N{q["linha"]} {q["nome"]}'
+                                 for q in lst if q is not p)})
+    semidx = [{**p, "grupo": p["tipo"]} for p in pts if not _nums(p["idx"])]
+    return dups, semidx
+
+
+# ─── re-sequenciamento contínuo das coordenadas ──────────────────────────────
+def sequenciar(pts):
+    """Re-sequencia TODAS as coordenadas em ordem, sem buracos nem repetição.
+
+    Ordena pelo índice ORIGINAL (preserva o arranjo pretendido) e distribui
+    sequencialmente: onde havia 490,490,491 passa a 490,491,492. Cada módulo
+    continua de onde o anterior parou. Pontos de posição (Multi Coord) consomem
+    2 coordenadas; comando usa a mesma repetida (n;n). Pontos com INDEX inválido
+    (#REF!) entram no fim da fila do seu grupo.
+    """
+    final, mapa = {}, []
+    for g in ("D", "A", "C", "A/D"):
+        lst = [p for p in pts if p["tipo"] == g]
+        if not lst:
+            continue
+        # ordena pelo índice original; sem índice (#REF!) vai pro fim
+        def chave(p):
             ns = _nums(p["idx"])
-            if not ns:
-                # INDEX inválido na lista (#REF! da fórmula quebrada) → aloca novo
-                qtd = 2 if str(p.get("tipoPt", "")).upper().startswith("MULTI") else 1
-                novos = []
-                for _ in range(qtd):
-                    while prox in usados:
-                        prox += 1
-                    novos.append(prox); usados.add(prox); prox += 1
-                # comando usa a mesma coord repetida (formato n;n)
-                val = f"{novos[0]};{novos[0]}" if g == "C" else ";".join(map(str, novos))
-                realoc.append({**p, "grupo": g, "motivo": f"SEM INDEX na lista ({p['idx']})",
-                               "de": p["idx"], "para": val})
-                final[(g, p["nome"])] = val
-                continue
-            if any(n in usados for n in ns):
-                novos = []
-                for _ in ns:
-                    while prox in usados:
-                        prox += 1
-                    novos.append(prox); usados.add(prox); prox += 1
-                realoc.append({**p, "grupo": g, "motivo": "INDEX duplicado na lista",
-                               "de": p["idx"], "para": ";".join(map(str, novos))})
-                final[(g, p["nome"])] = ";".join(map(str, novos))
+            return (0, ns[0], p["linha"]) if ns else (1, 0, p["linha"])
+        lst = sorted(lst, key=chave)
+        prox = min((n for p in lst for n in _nums(p["idx"])), default=0)
+        for p in lst:
+            multi = str(p.get("tipoPt", "")).upper().startswith("MULTI")
+            if g == "C":
+                val = f"{prox};{prox}"; prox += 1
+            elif multi:
+                val = f"{prox};{prox + 1}"; prox += 2
             else:
-                usados.update(ns)
-                final[(g, p["nome"])] = p["idx"]
-    return final, realoc
+                val = str(prox); prox += 1
+            final[(g, p["nome"])] = val
+            mapa.append({**p, "grupo": g, "de": p["idx"], "para": val,
+                         "mudou": "SIM" if str(p["idx"]).strip() != val else "nao"})
+    return final, mapa
 
 
 # ─── relatório ───────────────────────────────────────────────────────────────
-def gerar_relatorio(pts, realoc, sem_tpl, nomes_dup, descartados=(), fallback_rows=()):
+def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, descartados=(), fallback_rows=()):
     wb = openpyxl.Workbook(); wb.remove(wb.active)
     bold = Font(bold=True); hdrfill = PatternFill("solid", fgColor="DDEBF7")
     warn = PatternFill("solid", fgColor="FFF2CC")
@@ -176,41 +187,120 @@ def gerar_relatorio(pts, realoc, sem_tpl, nomes_dup, descartados=(), fallback_ro
                 ws.column_dimensions[chr(64 + i)].width = w
         return ws
 
+    mudou = [m for m in mapa if m["mudou"] == "SIM"]
+    sheet("0-LEIA-ME",
+          ["O PROBLEMA E A SOLUCAO"],
+          [["PROBLEMA ENCONTRADO NA LISTA DE PONTOS"],
+           ["1) Coordenadas REPETIDAS: o mesmo INDEX DNP3 aparece em 2+ sinais."],
+           ["   - ENTRE MODULOS: duas cadeias de alocacao se sobrepoem."],
+           ["     ex.: AL 13!N66 (CAS_AL13_52-13_SGFT) e INTERBARRAS BT!N41"],
+           ["          (CAS_IB20_52-20_FA) usam os DOIS a coordenada 556."],
+           ["   - DENTRO DO MODULO: no TR 2, a partir da linha 79, o indice sobe"],
+           ["     de 2 em 2 (L79 MOLA=416 e L80 SF6A=416) — formula arrastada."],
+           ["2) Coordenadas INVALIDAS: 172 pontos com #REF! (formula quebrada)."],
+           [""],
+           ["POR QUE ISSO QUEBRA: no DNP3 cada ponto de um grupo (entrada binaria,"],
+           ["entrada analogica, saida) precisa de um indice UNICO na UTR. Coordenada"],
+           ["repetida = o ADMS rejeita ('does not have unique input coordinates')."],
+           [""],
+           ["COMO FOI CORRIGIDO"],
+           ["Re-sequenciamento CONTINUO: as coordenadas foram redistribuidas em"],
+           ["ordem, sem buracos e sem repeticao, preservando o arranjo original"],
+           ["(ordenado pelo indice antigo). Onde havia 490,490,491 passou a ser"],
+           ["490,491,492. Cada modulo continua de onde o anterior parou."],
+           ["Ponto de posicao (Multi Coord) consome 2 coordenadas; comando usa a"],
+           ["mesma repetida (n;n). Os #REF! entraram no fim da fila do seu grupo."],
+           [""],
+           ["O QUE VOCE RECEBE"],
+           ["- TDT_CASCA_UTR_CAS_3.xlsx ....... a TDT ja com as coordenadas novas"],
+           ["- RGE ADMS_Lista Pontos Casca_CORRIGIDA.xlsx ... a lista com a coluna"],
+           ["  INDEX DNP3 ja arrumada (mesma estrutura da original)"],
+           ["- Aba 2 deste relatorio .......... de-para completo (antes -> depois)"],
+           ["- Aba 3 .......................... evidencia das coordenadas repetidas"],
+           [""],
+           ["ATENCAO: as coordenadas tem que bater com o que for configurado na UTR"],
+           ["ELIPSE. Use a lista CORRIGIDA como referencia para parametrizar a UTR."]])
+
     sheet("1-Resumo",
           ["Item", "Qtde", "Observação"],
           [["Pontos utilizados (SIM)", len(pts), "da lista de pontos"],
-           ["Coordenadas REALOCADAS", len(realoc), "ver aba 2 — de-para completo"],
-           ["  .. por INDEX duplicado", sum(1 for r in realoc if "duplicado" in r.get("motivo","")), "mantido o 1o ocupante"],
-           ["  .. por INDEX invalido (#REF!)", sum(1 for r in realoc if "SEM INDEX" in r.get("motivo","")), "formula quebrada na lista"],
-           ["Siglas SEM template na base", len(sem_tpl), "ver aba 3 — pontos nao gerados"],
-           ["NOMES duplicados", len(nomes_dup), "ver aba 4 — mesmo nome 2x no mesmo tipo"],
+           ["Coordenadas RE-SEQUENCIADAS", len(mapa), "todas — ver aba 2 (de-para)"],
+           ["  .. que MUDARAM de valor", len(mudou), "as demais ficaram iguais"],
+           ["Coordenadas REPETIDAS na lista", len(dups), "ver aba 3 — evidencia"],
+           ["Pontos com INDEX invalido (#REF!)", len(semidx), "ver aba 4"],
+           ["Siglas SEM template na base", len(sem_tpl), "0 = todas resolvidas"],
+           ["NOMES duplicados (descartados)", len(descartados), "ver aba 6"],
            ["UTR", RU, f"nova, DNP3, {FABRICANTE}, AOR {AOR}"]])
 
-    sheet("2-Realocacoes",
-          ["Aba", "Linha", "Tipo", "SIGLA", "NOME", "Index ORIGINAL", "Index NOVO", "Motivo"],
-          [[r["sheet"], r["linha"], r["grupo"], r["sigla"], r["nome"], r["de"], r["para"],
-            r.get("motivo", "")] for r in realoc])
+    sheet("2-DePara coordenadas",
+          ["Aba", "Linha", "Tipo", "SIGLA", "NOME", "Index ORIGINAL", "Index NOVO", "Mudou?"],
+          [[m["sheet"], m["linha"], m["grupo"], m["sigla"], m["nome"], m["de"], m["para"],
+            m["mudou"]] for m in mapa])
 
-    sheet("3-Siglas sem template",
+    sheet("3-Coords REPETIDAS (evidencia)",
+          ["Escopo", "Tipo", "Coordenada", "Aba", "Linha", "NOME", "Conflita com"],
+          [[d["escopo"], d["grupo"], d["coord"], d["sheet"], d["linha"], d["nome"],
+            d["conflita_com"]] for d in dups])
+
+    sheet("4-INDEX invalido (#REF!)",
+          ["Aba", "Linha", "Tipo", "SIGLA", "NOME", "Valor na lista"],
+          [[x["sheet"], x["linha"], x["grupo"], x["sigla"], x["nome"], x["idx"]]
+           for x in semidx])
+
+    sheet("5-Siglas sem template",
           ["SIGLA", "Qtde pontos", "Abas", "NOMEs (exemplos)"],
           [[s, d["n"], ", ".join(sorted(d["sheets"])[:5]), ", ".join(d["nomes"][:3])]
            for s, d in sorted(sem_tpl.items(), key=lambda x: -x[1]["n"])])
 
-    sheet("4-Nomes duplicados",
+    sheet("7-Nomes duplicados",
           ["NOME", "Tipo", "Ocorrencias", "Abas"],
           nomes_dup)
 
-    sheet("5-Descartados (nome dup)",
+    sheet("6-Descartados (nome dup)",
           ["Aba", "Linha", "Tipo", "SIGLA", "NOME", "Index na lista"],
           [[d["sheet"], d["linha"], d["tipo"], d["sigla"], d["nome"], d["idx"]]
            for d in descartados])
 
-    sheet("6-Siglas por equivalencia",
+    sheet("8-Siglas por equivalencia",
           ["SIGLA da lista", "Molde usado", "Qtde", "Descricao na lista"],
           fallback_rows)
 
     buf = io.BytesIO(); wb.save(buf)
     OUT_REL.write_bytes(buf.getvalue())
+
+
+# ─── lista de pontos corrigida ───────────────────────────────────────────────
+def gerar_lista_corrigida(mapa):
+    """Copia a lista original e reescreve a coluna INDEX DNP3 com as coords novas.
+    Casa por POSIÇÃO (aba, linha) — a coluna NOME é fórmula, então casar por nome
+    falharia ao abrir o arquivo preservando fórmulas."""
+    porpos = {(m["sheet"], m["linha"]): m["para"] for m in mapa}
+    wb = openpyxl.load_workbook(LISTA)
+    n = 0
+    for sn in wb.sheetnames:
+        if sn in SKIP_SHEETS:
+            continue
+        ws = wb[sn]
+        hi = None
+        for r in range(1, min(15, ws.max_row + 1)):
+            if any(str(ws.cell(r, c).value or "").strip() == "SIGLA SINAL"
+                   for c in range(1, ws.max_column + 1)):
+                hi = r; break
+        if hi is None:
+            continue
+        col = {str(ws.cell(hi, c).value or "").strip(): c
+               for c in range(1, ws.max_column + 1)}
+        cI = col.get("INDEX DNP3")
+        if not cI:
+            continue
+        for r in range(hi + 1, ws.max_row + 1):
+            v = porpos.get((sn, r))
+            if v is not None:
+                ws.cell(r, cI).value = v
+                n += 1
+    out = LISTA.with_name(LISTA.stem + "_CORRIGIDA.xlsx")
+    wb.save(out)
+    print(f"lista corrigida: {out.name} ({n} coordenadas escritas)")
 
 
 # ─── TDT ─────────────────────────────────────────────────────────────────────
@@ -235,8 +325,13 @@ def main():
         print(f"descartados por NOME duplicado: {len(descartados)}")
     pts = limpos
 
-    final, realoc = realocar(pts)
-    print(f"realocadas: {len(realoc)} coordenadas duplicadas")
+    dups, semidx = diagnosticar(pts)
+    print(f"diagnostico: {len(dups)} ocorrencias de coord repetida, {len(semidx)} com #REF!")
+    final, mapa = sequenciar(pts)
+    print(f"re-sequenciadas: {len(mapa)} coords ({sum(1 for m in mapa if m['mudou']=='SIM')} mudaram)")
+
+    # lista de pontos CORRIGIDA (mesma estrutura, INDEX DNP3 arrumado)
+    gerar_lista_corrigida(mapa)
 
     # siglas sem template + nomes duplicados
     sem_tpl = defaultdict(lambda: {"n": 0, "sheets": set(), "nomes": []})
@@ -251,7 +346,7 @@ def main():
         cnt[(p["nome"], p["tipo"])].append(p["sheet"])
     nomes_dup = [[n, t, len(s), ", ".join(sorted(set(s)))] for (n, t), s in cnt.items() if len(s) > 1]
 
-    _rel = lambda fb: gerar_relatorio(pts, realoc, sem_tpl, nomes_dup, descartados, fb)
+    _rel = lambda fb: gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, descartados, fb)
 
     # comandos por NOME
     cmd = {p["nome"]: final[("C", p["nome"])] for p in pts if p["tipo"] == "C"}
@@ -345,7 +440,7 @@ def main():
     fbc = _C((f["sigla"], f["molde"]) for f in usou_fallback)
     fbd = {f["sigla"]: f["desc"] for f in usou_fallback}
     _rel([[sg, mo, n, fbd.get(sg, "")] for (sg, mo), n in sorted(fbc.items(), key=lambda x: -x[1])])
-    print(f"relatorio: {OUT_REL.name} ({len(realoc)} realoc, {len(sem_tpl)} sem tpl, "
+    print(f"relatorio: {OUT_REL.name} ({len(mapa)} coords, {len(dups)} repetidas, "
           f"{len(usou_fallback)} por equivalencia)")
 
     buf = io.BytesIO(); wb.save(buf)
