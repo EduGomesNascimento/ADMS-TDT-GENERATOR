@@ -37,15 +37,18 @@ OUT_REL = Path("C:/Users/egnpo/Downloads/CASCA_RELATORIO.xlsx")
 DATA = Path(__file__).parent / "data"
 
 # DE-PARA das siglas da lista sem template na base — usa a linha-molde da
-# variante equivalente (o NOME/SIGLA da lista é preservado; só o template vem
-# da outra). Confirmado nas listas padrão RGE/ADMS + descrições da lista Casca:
-#   FGOO 'FALHA GOOSE'                    -> FCOM 'FALHA COMUNICACAO' (mesma natureza)
-#   TOC  '26 - ALARME TEMP OLEO CDC'      -> 2649 '26_49 FUNCAO'      (família 26)
-#   81A  '81 - FUNCAO RECOMPOSICAO ERAC'  -> 81   '81 FUNCAO'         (comandável)
-#   81P/81F/81C (estados do ERAC)         -> 81E1 '81 ESTAGIO 1'      (status)
+# variante de PERFIL TÉCNICO equivalente (o NOME e a SIGLA da lista são
+# preservados, e o Signal Alias vem da DESCRIÇÃO da lista; do molde só vem a
+# configuração: Signal Type / Input Data Type / Message Mapping).
+#   FGOO 'FALHA GOOSE'                   -> FCOM 'FALHA COMUNICACAO'  (Custom, NORMAL@FALHA)
+#   TOC  '26 - ALARME TEMP OLEO CDC'     -> TOA  '26 ALARME'          (Custom, NORMAL@ATUADO)
+#   81A  '81 - FUNCAO RECOMPOSICAO ERAC' -> 81   '81 FUNCAO'          (Enabled, comandável)
+#   81P/81F/81C (estados do ERAC)        -> FALH 'FALHA GERAL'        (Custom status)
+# 81E1 NÃO serve p/ 81P/81F/81C: é RelayTrip, e RelayTrip apontando p/ device
+# físico é rejeitado pelo validador do ADMS (visto na SND).
 FALLBACK_SIGLA = {
-    "FGOO": "FCOM", "TOC": "2649",
-    "81A": "81", "81P": "81E1", "81F": "81E1", "81C": "81E1",
+    "FGOO": "FCOM", "TOC": "TOA",
+    "81A": "81", "81P": "FALH", "81F": "FALH", "81C": "FALH",
 }
 
 RU = "UTR_CAS_3"
@@ -293,6 +296,9 @@ def main():
                 c = L(name)
                 if c: row[c - 1] = val
             put("Signal Name", p["nome"]); put("Remote Point Name", p["nome"])
+            # descrição AUTORITATIVA da lista (o molde pode ser de sigla equivalente)
+            if p.get("desc"):
+                put("Signal Alias", p["desc"])
             put("Signal Custom ID", None)
             put("Remote Point Custom ID", f"{p['nome']}_{RU}")
             put("Remote Unit", RU); put("Signal AOR Group", AOR)
