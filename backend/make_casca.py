@@ -134,6 +134,105 @@ def _nums(idx: str):
     return out
 
 
+# ─── inconsistências da própria lista, que afetam o MODELO ───────────────────
+def avisos_lista(pts):
+    """Erros de origem da planilha que o César precisa ver ANTES de montar o
+    Casca_Obra — o cabeçalho de cada aba declara MÓDULO/DJ/SECC/SECF/SECT, e
+    dali dá pra provar equipamento repetido entre vãos e módulo escrito errado.
+    """
+    wb = openpyxl.load_workbook(LISTA, read_only=True, data_only=True)
+    cab = OrderedDict()
+    for sn in wb.sheetnames:
+        if sn in SKIP_SHEETS:
+            continue
+        rows = list(wb[sn].iter_rows(min_row=1, max_row=8, values_only=True))
+        if not rows:
+            continue
+        eq = OrderedDict()
+        for r in rows:
+            if not r or len(r) < 2:
+                continue
+            a = str(r[0] or "").strip()
+            b = str(r[1] or "").strip()
+            if a and b and a.upper() not in ("EQUIPAMENTO", "UTILIZADO?"):
+                eq[a] = b
+        cab[sn] = {"titulo": str(rows[0][0] or "").strip(), "eq": eq}
+    wb.close()
+
+    def _base(sn):
+        """'AL 14 (FUTURO)' e 'AL 14' são o MESMO vão (versão futura)."""
+        return re.sub(r"\s*\(FUTURO\)\s*", "", sn, flags=re.I).strip().upper()
+
+    def _mesmo_vao(abas):
+        return len({_base(a) for a in abas}) == 1
+
+    av = []
+    # 1) mesmo equipamento declarado em duas abas (disjuntor/seccionadora)
+    dono = defaultdict(list)
+    for sn, d in cab.items():
+        for rot, val in d["eq"].items():
+            if re.match(r"^(52|89|29|24)-", val):
+                dono[val].append((sn, rot))
+    for val, lst in dono.items():
+        abas_set = {sn for sn, _ in lst}
+        if len(abas_set) < 2:
+            continue
+        abas = ", ".join(f"{sn} ({rot})" for sn, rot in lst)
+        if _mesmo_vao(abas_set):
+            av.append(["INFO", "Equipamento repetido — mesmo vao (versao FUTURO)",
+                       val, abas,
+                       "A aba (FUTURO) e a versao futura do mesmo vao, entao "
+                       "repetir o equipamento e esperado.",
+                       "Nada a fazer — so nao criar o dispositivo duas vezes."])
+        else:
+            av.append(["ALTA", "Equipamento repetido em vaos DIFERENTES", val, abas,
+                       "Dois vaos distintos nao compartilham o mesmo equipamento. "
+                       "Um dos cabecalhos esta com numero errado (copia/cola).",
+                       "Conferir no projeto e corrigir o cabecalho da aba errada "
+                       "ANTES de criar os dispositivos no Casca_Obra."])
+    # 2) prefixo do NOME (coluna MÓDULO) incoerente com o tipo do vão
+    tipo_por_prefixo = {"AL": "ALIMENTADOR", "BC": "BANCO CAPACITOR",
+                        "LT": "LINHA", "TR": "TRANSFORMADOR", "IB": "INTERBARRAS"}
+    por_aba = defaultdict(set)
+    for p in pts:
+        parts = p["nome"].split("_")
+        if len(parts) > 1:
+            por_aba[p["sheet"]].add(parts[1])
+    for sn, mods in por_aba.items():
+        titulo = cab.get(sn, {}).get("titulo", "").upper()
+        for m in sorted(mods):
+            pref = re.match(r"^([A-Z]+)", m)
+            esperado = tipo_por_prefixo.get(pref.group(1) if pref else "")
+            if esperado and esperado not in titulo and titulo:
+                av.append(["ALTA", "Prefixo do modulo nao bate com o tipo do vao",
+                           m, f"{sn} — cabecalho diz '{cab[sn]['titulo']}'",
+                           f"A coluna MODULO gera nomes CAS_{m}_... , mas o vao e "
+                           f"'{titulo.split('-')[1].strip() if '-' in titulo else titulo}'.",
+                           "Corrigir a celula MODULO na aba de origem; os NOMEs e o "
+                           "Device Mapping saem dela."])
+    # 3) mesmo NOME de módulo usado por duas abas
+    quem = defaultdict(set)
+    for sn, mods in por_aba.items():
+        for m in mods:
+            quem[m].add(sn)
+    for m, abas in sorted(quem.items()):
+        if len(abas) < 2:
+            continue
+        if _mesmo_vao(abas):
+            av.append(["INFO", "Modulo compartilhado — mesmo vao (versao FUTURO)",
+                       m, ", ".join(sorted(abas)),
+                       "Esperado: a aba (FUTURO) descreve o mesmo vao.",
+                       "Nada a fazer."])
+        else:
+            av.append(["ALTA", "Modulo usado por vaos DIFERENTES", m,
+                       ", ".join(sorted(abas)),
+                       "Os dois vaos geram sinais com o mesmo prefixo: os NOMEs "
+                       "colidem e o Device Mapping aponta pro mesmo dispositivo.",
+                       "Dar um numero de modulo proprio para cada vao na planilha."])
+    av.sort(key=lambda x: (x[0] != "ALTA", x[1], str(x[2])))
+    return av
+
+
 # ─── diagnóstico das duplicatas da lista ─────────────────────────────────────
 def diagnosticar(pts):
     """Evidencia as coordenadas repetidas na lista ORIGINAL (célula a célula)."""
@@ -200,7 +299,7 @@ def sequenciar(pts):
 
 # ─── relatório ───────────────────────────────────────────────────────────────
 def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
-                    fallback_rows=(), limpos=(), dm=None, cmds=None):
+                    fallback_rows=(), limpos=(), dm=None, cmds=None, avisos=()):
     wb = openpyxl.Workbook(); wb.remove(wb.active)
     bold = Font(bold=True); hdrfill = PatternFill("solid", fgColor="DDEBF7")
     warn = PatternFill("solid", fgColor="FFF2CC")
@@ -212,12 +311,16 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
             ws.cell(1, c).font = bold; ws.cell(1, c).fill = hdrfill
         for r in rows:
             ws.append(r)
+            if fills and fills(r):                 # realce por linha
+                for c in range(1, len(cols) + 1):
+                    ws.cell(ws.max_row, c).fill = fills(r)
         for i, w in enumerate([14, 34, 10, 12, 14, 14, 40], 1):
             if i <= len(cols):
                 ws.column_dimensions[chr(64 + i)].width = w
         return ws
 
     mudou = [m for m in mapa if m["mudou"] == "SIM"]
+    alta = [a for a in avisos if a[0] == "ALTA"]
     sheet("0-LEIA-ME",
           ["O PROBLEMA E A SOLUCAO"],
           [["PROBLEMA ENCONTRADO NA LISTA DE PONTOS"],
@@ -256,13 +359,20 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            ["NOME repetido nao e mais descartado: o 2o sinal recebe sufixo no"],
            ["device (CAS_TR7_TR7-2_TOD) e entra na TDT — aba 6."],
            [""],
-           ["ATENCAO — ERRO DE ORIGEM NAS ABAS 'BC 1' E 'BC 2'"],
-           ["Nessas abas a celula MODULO esta escrita 'AL' (e nao 'BC'), entao a"],
-           ["formula do NOME gera CAS_AL18_... e CAS_AL28_... . O AL18 colide com"],
-           ["a aba TRANSFERENCIA 24-01, que e o alimentador 18 de verdade. Aqui o"],
-           ["nome limpo ficou com quem tinha indice na lista (TRANSFERENCIA) e o"],
-           ["do BC 1 recebeu sufixo. CORRIJA A CELULA NA PLANILHA DE ORIGEM se o"],
-           ["banco de capacitores deve se chamar BC18/BC28 no modelo."],
+           ["ATENCAO — LER A ABA 15 ANTES DE MONTAR O DIAGRAMA"],
+           ["A aba 15 lista os erros da PLANILHA DE ORIGEM que afetam o modelo."],
+           ["Os dois mais graves:"],
+           ["  a) 'TR 1' e 'TR 2' declaram OS MESMOS equipamentos (DJ AT 52-4 e"],
+           ["     seccionadoras 89-20/22/24/28). Dois transformadores nao dividem"],
+           ["     disjuntor de alta — a aba TR 2 foi copiada da TR 1 sem trocar os"],
+           ["     numeros. Foi isso que gerou os NOMEs duplicados da aba 6."],
+           ["  b) 'BC 1' e 'BC 2' tem a celula MODULO escrita 'AL' (e nao 'BC'),"],
+           ["     entao a formula do NOME gera CAS_AL18_... e CAS_AL28_... . O"],
+           ["     AL18 colide com a aba TRANSFERENCIA 24-01, que e o alimentador"],
+           ["     18 de verdade. O nome limpo ficou com quem tinha indice na lista"],
+           ["     (TRANSFERENCIA) e o do BC 1 recebeu sufixo."],
+           ["Corrigir na planilha de origem muda NOME e Device Mapping — melhor"],
+           ["acertar antes de criar os dispositivos no Casca_Obra."],
            [""],
            ["DEVICE MAPPING — conferido contra o MODELO"],
            ["Fonte da verdade: PT-MOD-SE-CASCA.xml (changeset do Casca_Obra)."],
@@ -309,6 +419,8 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            ["Siglas SEM template na base", len(sem_tpl), "0 = todas resolvidas"],
            ["NOMES duplicados (renomeados)", len(renomeados), "ver aba 6 — todos na TDT"],
            ["Index antigo limpo (nao utilizado)", len(limpos), "ver aba 9"],
+           ["AVISOS p/ o modelo (severidade ALTA)", len(alta), "ver aba 15"],
+           ["Dispositivos a CRIAR no Casca_Obra", "ver aba 13", "sem eles o sinal nao mapeia"],
            ["UTR", RU, f"nova, DNP3, {FABRICANTE}, AOR {AOR}"],
            ["Container da RTU", CONTAINER, "informado pelo usuario"]])
 
@@ -348,6 +460,11 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     sheet("9-Index antigo limpo",
           ["Aba", "Linha", "Tipo", "SIGLA", "Utilizado?", "Index ANTIGO removido"],
           list(limpos))
+
+    sheet("15-AVISOS p-o modelo",
+          ["Severidade", "Achado", "Item", "Onde", "Por que importa", "O que fazer"],
+          list(avisos),
+          fills=lambda r: warn if r and r[0] == "ALTA" else None)
 
     cmds = cmds or {"realoc": [], "orfaos": []}
     sheet("12-Comandos resolvidos",
@@ -552,9 +669,12 @@ def main():
         cnt[(p["nome"], p["tipo"])].append(p["sheet"])
     nomes_dup = [[n, t, len(s), ", ".join(sorted(set(s)))] for (n, t), s in cnt.items() if len(s) > 1]
 
+    avisos = avisos_lista(pts)
+    n_alta = sum(1 for a in avisos if a[0] == "ALTA")
+    print(f"avisos p/ o modelo: {len(avisos)} ({n_alta} de severidade ALTA) — aba 15")
     _rel = lambda fb, dmr, cm: gerar_relatorio(pts, mapa, dups, semidx, sem_tpl,
                                                nomes_dup, renomeados, fb, limpos,
-                                               dmr, cm)
+                                               dmr, cm, avisos)
 
     # ── comandos: cada linha C precisa achar o sinal D que vai carregá-lo ──
     # 1) NOME idêntico (caso normal)
