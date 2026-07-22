@@ -170,7 +170,8 @@ def sequenciar(pts):
 
 
 # ─── relatório ───────────────────────────────────────────────────────────────
-def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, descartados=(), fallback_rows=()):
+def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, descartados=(),
+                    fallback_rows=(), limpos=()):
     wb = openpyxl.Workbook(); wb.remove(wb.active)
     bold = Font(bold=True); hdrfill = PatternFill("solid", fgColor="DDEBF7")
     warn = PatternFill("solid", fgColor="FFF2CC")
@@ -218,6 +219,14 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, descartados=(),
            ["- Aba 2 deste relatorio .......... de-para completo (antes -> depois)"],
            ["- Aba 3 .......................... evidencia das coordenadas repetidas"],
            [""],
+           ["DOIS AJUSTES NA LISTA CORRIGIDA"],
+           ["a) Linhas com Utilizado? diferente de SIM ainda carregavam o indice"],
+           ["   ANTIGO, que passaria a colidir com a numeracao nova. Esses valores"],
+           ["   foram LIMPOS e estao registrados na aba 9 (nada foi perdido)."],
+           ["b) As formulas foram congeladas no valor calculado e o vinculo externo"],
+           ["   da planilha original foi removido — era ele que fazia o Excel abrir"],
+           ["   pedindo reparo do arquivo."],
+           [""],
            ["ATENCAO: as coordenadas tem que bater com o que for configurado na UTR"],
            ["ELIPSE. Use a lista CORRIGIDA como referencia para parametrizar a UTR."]])
 
@@ -230,6 +239,7 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, descartados=(),
            ["Pontos com INDEX invalido (#REF!)", len(semidx), "ver aba 4"],
            ["Siglas SEM template na base", len(sem_tpl), "0 = todas resolvidas"],
            ["NOMES duplicados (descartados)", len(descartados), "ver aba 6"],
+           ["Index antigo limpo (nao utilizado)", len(limpos), "ver aba 9"],
            ["UTR", RU, f"nova, DNP3, {FABRICANTE}, AOR {AOR}"]])
 
     sheet("2-DePara coordenadas",
@@ -265,6 +275,10 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, descartados=(),
           ["SIGLA da lista", "Molde usado", "Qtde", "Descricao na lista"],
           fallback_rows)
 
+    sheet("9-Index antigo limpo",
+          ["Aba", "Linha", "Tipo", "SIGLA", "Utilizado?", "Index ANTIGO removido"],
+          list(limpos))
+
     buf = io.BytesIO(); wb.save(buf)
     OUT_REL.write_bytes(buf.getvalue())
 
@@ -273,10 +287,17 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, descartados=(),
 def gerar_lista_corrigida(mapa):
     """Copia a lista original e reescreve a coluna INDEX DNP3 com as coords novas.
     Casa por POSIÇÃO (aba, linha) — a coluna NOME é fórmula, então casar por nome
-    falharia ao abrir o arquivo preservando fórmulas."""
+    falharia ao abrir o arquivo preservando fórmulas.
+
+    A lista original tem VÍNCULOS EXTERNOS (xl/externalLinks/externalLink1.xml).
+    O openpyxl reescreve essa parte sem o cache de valores → o Excel abre pedindo
+    reparo. Como a saída é para consulta humana, congelamos toda fórmula no seu
+    valor calculado e removemos os vínculos externos."""
     porpos = {(m["sheet"], m["linha"]): m["para"] for m in mapa}
     wb = openpyxl.load_workbook(LISTA)
+    wbv = openpyxl.load_workbook(LISTA, data_only=True)   # valores em cache
     n = 0
+    limpos = []
     for sn in wb.sheetnames:
         if sn in SKIP_SHEETS:
             continue
@@ -293,14 +314,55 @@ def gerar_lista_corrigida(mapa):
         cI = col.get("INDEX DNP3")
         if not cI:
             continue
+        cU, cT, cS = col.get("Utilizado?"), col.get("TIPO"), col.get("SIGLA SINAL")
+        wsv = wbv[sn]
         for r in range(hi + 1, ws.max_row + 1):
             v = porpos.get((sn, r))
             if v is not None:
                 ws.cell(r, cI).value = v
                 n += 1
+                continue
+            # linha NÃO utilizada que ainda carrega o índice ANTIGO → limpa,
+            # senão colide com a numeração nova e induz erro na parametrização
+            old = wsv.cell(r, cI).value
+            if old in (None, "") or not _nums(old):
+                continue
+            limpos.append([sn, r,
+                           str(wsv.cell(r, cT).value or "").strip() if cT else "",
+                           str(wsv.cell(r, cS).value or "").strip() if cS else "",
+                           str(wsv.cell(r, cU).value or "").strip() if cU else "",
+                           str(old)])
+            ws.cell(r, cI).value = None
+    # congela fórmulas no valor calculado (inclui a coluna NOME) e corta os
+    # vínculos externos + nomes definidos que apontam para outra pasta ('[')
+    frozen = 0
+    for sn in wb.sheetnames:
+        ws, wsv = wb[sn], wbv[sn]
+        for row in ws.iter_rows():
+            for cel in row:
+                if isinstance(cel.value, str) and cel.value.startswith("="):
+                    cel.value = wsv.cell(cel.row, cel.column).value
+                    frozen += 1
+    wb._external_links = []
+    for dn in [k for k, v in wb.defined_names.items() if "[" in str(v.value)]:
+        del wb.defined_names[dn]
+
     out = LISTA.with_name(LISTA.stem + "_CORRIGIDA.xlsx")
-    wb.save(out)
-    print(f"lista corrigida: {out.name} ({n} coordenadas escritas)")
+    buf = io.BytesIO(); wb.save(buf)
+    data = buf.getvalue()
+    try:
+        data = excel_native.resave_native(data)          # grava formato nativo
+    except Exception as e:                               # noqa: BLE001
+        print(f"  (resave nativo indisponivel: {e})")
+    try:
+        out.write_bytes(data)
+    except PermissionError:                              # aberta no Excel
+        out = out.with_name(out.stem + "_NOVA.xlsx")
+        out.write_bytes(data)
+    print(f"lista corrigida: {out.name} ({n} coordenadas escritas, "
+          f"{len(limpos)} indices antigos limpos em linhas nao utilizadas, "
+          f"{frozen} formulas congeladas, vinculos externos removidos)")
+    return limpos
 
 
 # ─── TDT ─────────────────────────────────────────────────────────────────────
@@ -330,7 +392,7 @@ def main():
     print(f"re-sequenciadas: {len(mapa)} coords ({sum(1 for m in mapa if m['mudou']=='SIM')} mudaram)")
 
     # lista de pontos CORRIGIDA (mesma estrutura, INDEX DNP3 arrumado)
-    gerar_lista_corrigida(mapa)
+    limpos = gerar_lista_corrigida(mapa)
 
     # siglas sem template + nomes duplicados
     sem_tpl = defaultdict(lambda: {"n": 0, "sheets": set(), "nomes": []})
@@ -345,7 +407,8 @@ def main():
         cnt[(p["nome"], p["tipo"])].append(p["sheet"])
     nomes_dup = [[n, t, len(s), ", ".join(sorted(set(s)))] for (n, t), s in cnt.items() if len(s) > 1]
 
-    _rel = lambda fb: gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, descartados, fb)
+    _rel = lambda fb: gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup,
+                                      descartados, fb, limpos)
 
     # comandos por NOME
     cmd = {}
