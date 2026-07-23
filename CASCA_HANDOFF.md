@@ -818,3 +818,43 @@ CAS_LTMRU_LTMRU_DJ_2      37             CAS_AL25_52-25_DJ_2       22
                                          CAS_AL26_52-26_DJ_2       22
                                          CAS_TRF29_24-2_DJ_2       22
 ```
+
+---
+
+## 18. TDT de um vão só
+
+```bash
+python make_casca.py --modulo LTPRI     # aceita o nome do unifilar
+python make_casca.py --modulo LT2       # ou o da lista — dá no mesmo
+```
+
+Sai `TDT_CASCA_LT2.xlsx` + `CASCA_RELATORIO_LT2.xlsx`. **Não** regrava a lista
+corrigida nem a TDT completa.
+
+O recorte **não renumera nada**: coordenadas, Device Mapping, Remote Point
+Custom ID e Signal Alias saem idênticos aos da TDT inteira. Conferido sinal a
+sinal — 88/88 iguais. Por isso a parcial e a completa convivem no modelo.
+
+> O ordinal do Remote Point Custom ID é calculado sobre a TDT **completa** e só
+> depois filtrado (`rpc_por_linha`). Sem isso o recorte recomeçaria do
+> `Cas_obra_id_00001` e colidiria com a TDT inteira.
+
+### LT PRI (aba `LT 2` da lista) — 88 sinais
+
+```
+73 discretos + 15 analogicos
+Input coords 15..157        88/88 com dispositivo no modelo, 0 pendente
+```
+
+| Device Mapping | Sinais |
+|---|---|
+| `CAS_LTPRI_52-21_DJ_2` | 41 |
+| `CAS_LTPRI_LTPRI_PROT_2` | 10 |
+| `CAS_LTPRI_LTPRI_TC_2` | 10 |
+| `CAS_LTPRI_29-3_SEC_2` | 5 |
+| `CAS_LTPRI_LTPRI_TP_2` | 4 |
+| + 12 relés/seccionadoras com 1–2 sinais cada | 18 |
+
+São **17 dispositivos** para renomear com `_2` no `Cas_Obra` — depois disso o
+vão inteiro entra limpo. É o teste mais barato para validar a estratégia do
+sufixo antes de fazer em massa.

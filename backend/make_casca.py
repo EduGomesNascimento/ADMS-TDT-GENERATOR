@@ -104,6 +104,13 @@ SIGNAL_ALIAS = date.today().strftime("%d/%m/%Y")
 # Vale para TODOS: os que já existem (renomear no modelo) e os que ainda serão
 # criados (nascem já com o sufixo). Aba 13 do relatório já lista com o "_2".
 DM_SUFIXO = "_2"
+
+# Gerar SÓ um vão (--modulo LT2 / --modulo LTPRI). As coordenadas continuam as
+# do sequenciamento GLOBAL — o recorte não renumera nada, só filtra os sinais,
+# então a TDT parcial e a completa são compatíveis entre si.
+MODULO_FILTRO = None
+SO_TDT = False                  # com filtro, não regrava lista corrigida
+
 HEADER_ROWS = 4
 SKIP_SHEETS = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
 
@@ -753,7 +760,8 @@ def main():
     print(f"re-sequenciadas: {len(mapa)} coords ({sum(1 for m in mapa if m['mudou']=='SIM')} mudaram)")
 
     # lista de pontos CORRIGIDA (mesma estrutura, INDEX DNP3 arrumado)
-    limpos = gerar_lista_corrigida(mapa)
+    # com --modulo nao mexe na lista corrigida (as coordenadas sao as mesmas)
+    limpos = [] if SO_TDT else gerar_lista_corrigida(mapa)
 
     # siglas sem template + nomes duplicados
     sem_tpl = defaultdict(lambda: {"n": 0, "sheets": set(), "nomes": []})
@@ -834,7 +842,18 @@ def main():
     cont_nome = CONTAINER          # nome da arvore do ADMS, nao o do rascunho
     ambiguos = devmap.ambiguos_no_modelo()
     dm_ambiguo = []; dm_device = 0
-    rpc_seq = 0; rpc_rows = []
+    rpc_rows = []
+    # Ordinal do Remote Point Custom ID calculado sobre a TDT COMPLETA, na
+    # mesma ordem em que as linhas sao escritas. Assim o recorte por --modulo
+    # mantem os MESMOS ids da TDT inteira e as duas podem conviver no modelo.
+    rpc_por_linha = {}
+    _n = 0
+    for _sheet, _tipo in plano:
+        for _p in pts_tdt:
+            if _p["tipo"] != _tipo or not _p["usado"]:
+                continue
+            _n += 1
+            rpc_por_linha[(_p["sheet"], _p["linha"], _tipo)] = _n
     for sheet, tipo in plano:
         ws = wb[sheet]
         lab = {ws.cell(HEADER_ROWS, c).value: c for c in range(1, ws.max_column + 1)
@@ -847,6 +866,8 @@ def main():
         rows = []
         for p in pts_tdt:
             if p["tipo"] != tipo or not p["usado"]:
+                continue
+            if MODULO_FILTRO and p["nome"].split("_")[1].upper() != MODULO_FILTRO:
                 continue
             tpl = TPL[tipo].get(p["sigla"])
             if not tpl:
@@ -883,8 +904,8 @@ def main():
             # Antes era {nome}_{RU}: longo e derivado do nome, o que arrisca
             # colidir com remote point ja existente no modelo. Agora e uma
             # sequencia limpa Cas_obra_id_00001, 00002, ...
-            rpc_seq += 1
-            rpc = f"{RPC_PREFIXO}{rpc_seq:05d}" if RPC_ORDINAL else f"{nome}_{RU}"
+            _seq = rpc_por_linha[(p["sheet"], p["linha"], tipo)]
+            rpc = f"{RPC_PREFIXO}{_seq:05d}" if RPC_ORDINAL else f"{nome}_{RU}"
             put("Remote Point Custom ID", rpc)
             rpc_rows.append([nome, p["sigla"], p["sheet"], p["linha"], rpc])
             put("Remote Unit", RU); put("Signal AOR Group", AOR)
@@ -1000,4 +1021,18 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+    # python make_casca.py                -> TDT completa + lista + relatorio
+    # python make_casca.py --modulo LT2    -> SO aquele vao, num arquivo proprio
+    #   (aceita o nome do vao na LISTA, LT2, ou no UNIFILAR, LTPRI)
+    if "--modulo" in sys.argv:
+        MODULO_FILTRO = sys.argv[sys.argv.index("--modulo") + 1].upper()
+        alvo = next((k for k, v in devmap.MODULO_EQUIV.items()
+                     if v[0].upper() == MODULO_FILTRO), MODULO_FILTRO)
+        globals()["MODULO_FILTRO"] = alvo
+        globals()["OUT_TDT"] = OUT_TDT.with_name(f"TDT_CASCA_{alvo}.xlsx")
+        globals()["OUT_REL"] = OUT_REL.with_name(f"CASCA_RELATORIO_{alvo}.xlsx")
+        globals()["SO_TDT"] = True
+        print(f"=== SO O VAO {alvo}"
+              + (f" (LT PRI / {MODULO_FILTRO} no unifilar)" if alvo != MODULO_FILTRO else ""))
     main()
