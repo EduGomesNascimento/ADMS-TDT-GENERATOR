@@ -113,6 +113,12 @@ DM_SUFIXO = ""
 # "Could not find any device".
 DM_ESTRITO = True
 
+# O sinal que nao acha dispositivo vai para a PROPRIA UTR (Device Mapping =
+# UTR_CAS_3), em vez de ficar fora da TDT. Sao os vaos que ainda nao existem
+# no modelo — ficam pendurados na UTR e depois e so remapear pro dispositivo
+# certo, sem precisar reimportar tudo. Aba 19 do relatorio lista quais sao.
+DM_NA_UTR = True
+
 # Gerar SÓ um vão (--modulo LT2 / --modulo LTPRI). As coordenadas continuam as
 # do sequenciamento GLOBAL — o recorte não renumera nada, só filtra os sinais,
 # então a TDT parcial e a completa são compatíveis entre si.
@@ -614,8 +620,8 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
              for m in sorted({x["mod"] for x in dm.get("pendentes", [])
                               if x["pend"].startswith("vao ")})])
 
-    sheet("19-FORA (sem Device Mapping)",
-          ["Aba", "Linha", "Tipo", "SIGLA", "NOME", "Motivo"],
+    sheet("19-Mapeados na UTR",
+          ["Aba", "Linha", "Tipo", "SIGLA", "NOME", "Por que nao achou dispositivo"],
           list(dm.get("sem_dm", [])),
           fills=lambda r: warn)
 
@@ -899,7 +905,9 @@ def main():
                 if dm_base is None:
                     sem_dm.append([p["sheet"], p["linha"], p["tipo"], p["sigla"],
                                    p["nome"], dm_o])
-                    continue
+                    if not DM_NA_UTR:
+                        continue
+                    dm_base, dm_o = RU, "na UTR (sem dispositivo)"
             else:
                 dm_base, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
             # NOME final (2ª ocorrência de um nome repetido leva sufixo no device)

@@ -877,9 +877,10 @@ dos religadores `RAD_*`, e não servem). Com `DM_ESTRITO = True`:
 ### Resultado
 
 ```
-TDT_CASCA_UTR_CAS_3.xlsx    858 sinais   (705 D + 151 A + 2 A/D)
-                            0 Device Mappings fora do catalogo
-                            101 DMs distintos, todos do CASCA.xlsx
+TDT_CASCA_UTR_CAS_3.xlsx   1282 sinais  (1040 D + 240 A + 2 A/D)
+    858 em dispositivo do CASCA.xlsx   (101 DMs distintos)
+    424 na UTR_CAS_3                   (vao ainda nao existe)
+      0 Device Mapping fora do catalogo
 ```
 
 Como cada DM foi escolhido:
@@ -893,10 +894,16 @@ Como cada DM foi escolhido:
 | barra / TC / trafo / retificador | 67 |
 | exato | 1 |
 
-### Os 424 que ficaram de fora
+### Os 424 sem dispositivo vão para a UTR
 
-São os vãos que **não existem na CASCA de hoje** — não há Device Mapping
-possível para eles:
+> "o q n tiver dvc mapping põe na utr"
+
+Em vez de ficarem fora, esses sinais entram na TDT com
+**`Device Mapping = UTR_CAS_3`** — pendurados na própria UTR. Depois é só
+remapear cada um para o dispositivo certo quando ele existir, sem reimportar
+nada. A aba `19-Mapeados na UTR` lista os 424, com o motivo de cada um.
+
+São os vãos que **não existem na CASCA de hoje**:
 
 | Vão | Sinais | O que é |
 |---|---|---|
@@ -907,9 +914,12 @@ possível para eles:
 | `BP213.8` | 14 | 2ª barra 13,8 kV |
 | `TSA2` | 5 | 2º serviço auxiliar |
 
-Junto saem **71 comandos** desses mesmos sinais. Eles voltam sozinhos assim que
-os dispositivos existirem: é só rodar `make_casca.py` de novo com um
-`CASCA.xlsx` atualizado.
+Os **71 comandos** desses sinais vêm junto — nada se perde. Quando os
+dispositivos existirem, é só rodar `make_casca.py` de novo com um `CASCA.xlsx`
+atualizado e eles saem da UTR para o dispositivo certo.
+
+Chaves em `backend/make_casca.py`: `DM_ESTRITO` (só o catálogo) e `DM_NA_UTR`
+(pôr na UTR em vez de deixar de fora).
 
 > As coordenadas **não mudam** por causa do recorte — o sequenciamento continua
 > global, sobre os 2535 pontos da lista. A lista corrigida segue valendo

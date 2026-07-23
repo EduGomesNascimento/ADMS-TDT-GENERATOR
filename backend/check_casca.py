@@ -274,8 +274,8 @@ def main():
     if _rel.exists():
         try:
             _w = openpyxl.load_workbook(_rel, read_only=True, data_only=True)
-            if "19-FORA (sem Device Mapping)" in _w.sheetnames:
-                for _r in _w["19-FORA (sem Device Mapping)"].iter_rows(
+            if "19-Mapeados na UTR" in _w.sheetnames:
+                for _r in _w["19-Mapeados na UTR"].iter_rows(
                         min_row=2, values_only=True):
                     if _r and _r[4]:
                         fora_ok.add((str(_r[0]), _r[1]))
@@ -405,7 +405,10 @@ def main():
     print("=== 7) CONTAGEM POR ABA ===")
     esperado = collections.Counter(
         p["sheet"] for p in pts if p["usado"] and p["tipo"] != "C" and p["sigla"]
-        and (p["sheet"], p["linha"]) not in fora_ok)
+        # com DM_NA_UTR o sinal sem dispositivo ENTRA na TDT (mapeado na UTR),
+        # entao so desconta o que realmente ficou de fora
+        and not ((p["sheet"], p["linha"]) in fora_ok
+                 and casado.get((p["sheet"], p["linha"])) is None))
     obtido = collections.Counter(
         p["sheet"] for p in pts if casado.get((p["sheet"], p["linha"])))
     for sn in sorted(set(esperado) | set(obtido)):
