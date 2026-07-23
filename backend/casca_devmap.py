@@ -128,6 +128,49 @@ _ULTIMO_RECURSO = ("DJ", "SEC", "PROT", "TR", "BP", "TC", "TP", "RET")
 _CACHE = {}
 
 
+# ─── Device Mapping da TDT ORIGINAL da subestação ────────────────────────────
+def dm_da_tdt_original():
+    """(modulo, sigla) -> Device Mapping usado HOJE na CASCA.
+
+    "o device mapping é o mesmo da tdt original da subestação": onde a TDT atual
+    já define o Device Mapping de um sinal, é esse que vale — ele funciona em
+    produção. Isso corrige casos que nenhuma regra adivinha, por exemplo:
+      - as medidas (IA/IB/IC/P/Q) apontam pro DISJUNTOR do vão, não pro TC
+      - auxiliares de seccionadora às vezes apontam pro disjuntor
+      - o TAP do TR1 usa CAS_TR1_TR1_COMTAP / _TAP_REG, dispositivos que nem
+        aparecem no XML do changeset (o export é um delta, não o modelo inteiro)
+    """
+    if "orig" in _CACHE:
+        return _CACHE["orig"]
+    por = collections.defaultdict(collections.Counter)
+    todos = set()
+    if TDT_ATUAL.exists():
+        wb = openpyxl.load_workbook(TDT_ATUAL, read_only=True, data_only=True)
+        for sn in wb.sheetnames:
+            if "Signals" not in sn and "DiscreteAnalog" not in sn:
+                continue
+            rows = list(wb[sn].iter_rows(values_only=True))
+            if len(rows) <= HEADER_ROWS:
+                continue
+            hdr = [str(c or "").strip() for c in rows[HEADER_ROWS - 1]]
+            ix = {n: i for i, n in enumerate(hdr) if n}
+            cD = ix.get("Device Mapping")
+            if cD is None:
+                continue
+            for r in rows[HEADER_ROWS:]:
+                if not r or not r[0]:
+                    continue
+                nome, dm = str(r[0]).strip(), str(r[cD] or "").strip()
+                p = nome.split("_")
+                if not dm or not nome.startswith("CAS_") or len(p) < 4:
+                    continue
+                por[(p[1], "_".join(p[3:]))][dm] += 1
+                todos.add(dm)
+        wb.close()
+    _CACHE["orig"] = ({k: c.most_common(1)[0][0] for k, c in por.items()}, todos)
+    return _CACHE["orig"]
+
+
 # ─── catálogo do modelo (XML do changeset) ───────────────────────────────────
 def catalogo():
     if "cat" in _CACHE:
@@ -147,6 +190,16 @@ def catalogo():
             p = dm.split("_")
             if len(p) >= 3:
                 por_mod[p[1]].setdefault("_".join(p[3:]) if len(p) > 3 else "", dm)
+    # O XML e um DELTA do changeset, nao o modelo inteiro: dispositivos que a
+    # TDT atual ja referencia (ex.: CAS_TR1_TR1_COMTAP) existem no modelo mesmo
+    # sem aparecer no export. Contam como validos e alimentam o rebaixamento.
+    _, do_tdt = dm_da_tdt_original()
+    for dm in do_tdt:
+        validos.add(dm)
+        tipos.setdefault(dm, "(da TDT atual)")
+        p = dm.split("_")
+        if len(p) >= 3:
+            por_mod[p[1]].setdefault("_".join(p[3:]) if len(p) > 3 else "", dm)
     _CACHE["cat"] = {"validos": validos, "por_mod": dict(por_mod), "tipos": tipos}
     return _CACHE["cat"]
 
@@ -227,15 +280,22 @@ def resolver(nome: str, sigla: str) -> tuple[str, str, str]:
     suf, origem = sufixo(sigla, dev)
     canonico = f"{alias}_{mod}_{dev}_{suf}"
 
-    if not cat["validos"]:                       # sem XML: fica no canônico
-        return canonico, origem, ""
-    if canonico in cat["validos"]:
-        return canonico, f"{origem} + modelo (exato)", ""
-
     # módulo da lista -> módulo do unifilar (o campo real manda no dispositivo)
     equiv = MODULO_EQUIV.get(mod)
     mod_alvo = equiv[0] if equiv else mod
     nota = f" [{mod}->{mod_alvo}]" if equiv else ""
+
+    # 0) O QUE A TDT ORIGINAL JA USA para este vão + esta sigla. Tem prioridade
+    #    sobre qualquer regra: é o valor que funciona em produção hoje.
+    orig_por_chave, _ = dm_da_tdt_original()
+    achado = orig_por_chave.get((mod_alvo, sigla))
+    if achado:
+        return achado, f"TDT original da CASCA{nota}", ""
+
+    if not cat["validos"]:                       # sem XML: fica no canônico
+        return canonico, origem, ""
+    if canonico in cat["validos"]:
+        return canonico, f"{origem} + modelo (exato)", ""
 
     domod = cat["por_mod"].get(mod_alvo) if REAPROVEITAR_DISPOSITIVO_ANTIGO else None
     if domod:

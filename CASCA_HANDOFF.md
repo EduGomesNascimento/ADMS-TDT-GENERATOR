@@ -429,3 +429,44 @@ Os vãos que não existem no unifilar (`AL18`, `AL24`, `AL25`, `AL26`, `TRF29`,
 | 665 "multiple devices" | ~63 (só os 7 IDs duplicados dentro do modelo) |
 | 4 com alias `IMA_` | 0 |
 | 335 "could not find" | ~335, até os dispositivos da aba 13 serem criados |
+
+---
+
+## 11. A TDT original tem prioridade sobre qualquer regra
+
+> "o device mapping é o mesmo da tdt original da subestação"
+
+`casca_devmap.dm_da_tdt_original()` monta um índice **`(módulo, sigla) → Device
+Mapping`** a partir da `CASCA.xlsx` (as abas IEC101/IEC104/DNP3 da subestação em
+operação). Esse índice é consultado **antes de qualquer regra** — é o valor que
+funciona em produção hoje.
+
+**270 sinais** passaram a vir daí. Em **51 casos** o valor da TDT original é
+diferente do que a regra deduziria — e a regra estava errada:
+
+| Sinal | A regra deduzia | A TDT original usa |
+|---|---|---|
+| `IA` `IB` `IC` `P` `Q` dos alimentadores | `CAS_AL12_AL12_TC` | **`CAS_AL12_52-2_DJ`** |
+| auxiliares de seccionadora do LT SCO | `CAS_LTSCO_89-102_SEC` | **`CAS_LTSCO_52-20_DJ`** |
+| auxiliares do TR1 (AT e BT) | `CAS_TR1AT_89-12_SEC` | **`CAS_TR1_TR1_TR`** |
+| TAP / comutador do TR1 | `CAS_TR1_TR1_TR` | **`CAS_TR1_TR1_COMTAP`** / `_TAP_REG` |
+
+As medidas irem para o **disjuntor** do vão, e não para um TC, é justamente o
+tipo de convenção que nenhuma regra adivinha.
+
+### Efeito colateral importante
+
+`CAS_TR1_TR1_COMTAP` e `CAS_TR1_TR1_TAP_REG` **não aparecem no XML do changeset**,
+mas existem no modelo — o export é um **delta**, não o modelo inteiro. Por isso o
+catálogo de dispositivos válidos agora é a **união** do XML com os Device Mappings
+da TDT original. Sem isso, a aba `13` superestimava o que falta criar.
+
+**Ordem final de resolução** (`casca_devmap.resolver`):
+
+0. **TDT original da CASCA**, por `(módulo do unifilar, sigla)` ← novo
+1. Texto idêntico a um ID do modelo
+2. Equivalência de vão (`MODULO_EQUIV`, aba `16`)
+3. Mesmo vão, equipamento renumerado
+4. Relé específico inexistente → relé genérico `_PROT`
+5. Dispositivo inexistente → equivalente do vão (aba `14`)
+6. Vão inexistente → nome canônico (aba `13`)
