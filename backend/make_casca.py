@@ -72,9 +72,20 @@ FABRICANTE = "ELIPSE"
 # ambiguidade CASCA x Cas_Obra continuava derrubando os discretos.
 CONTAINER = "Cas_Obra"
 
-# Remote Point Custom ID: sequencia ordinal propria da UTR nova, no formato
-# Cas_obra_id_00001. Precisa ser UNICO — se repetir um custom id que ja existe
-# no modelo, o ADMS casa com o remote point errado.
+# ── Remote Point Custom ID ───────────────────────────────────────────────────
+# É por este campo que o ADMS reconhece um remote point de importações
+# anteriores. Duas opções, e a escolha MUDA o resultado do import:
+#
+#   True  -> ordinal Cas_obra_id_00001 (pedido do usuário). Como o id é novo,
+#            o ADMS trata TODO sinal como novo e re-resolve o Device Mapping do
+#            zero. Foi isso que revelou o estado real: 1282/1282 falharam,
+#            porque todo ID de Mapeamento SCADA do Cas_Obra esta duplicado com
+#            o da CASCA original.
+#   False -> {nome}_{RU}, o formato das importacoes anteriores. O ADMS
+#            reencontra os remote points ja criados e mantem os vinculos —
+#            eram ~1000 sinais "mapeados", mas mapeados de uma resolucao
+#            antiga, que ninguem conferiu em qual das duas subestacoes caiu.
+RPC_ORDINAL = True
 RPC_PREFIXO = "Cas_obra_id_"
 HEADER_ROWS = 4
 SKIP_SHEETS = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
@@ -852,7 +863,7 @@ def main():
             # colidir com remote point ja existente no modelo. Agora e uma
             # sequencia limpa Cas_obra_id_00001, 00002, ...
             rpc_seq += 1
-            rpc = f"{RPC_PREFIXO}{rpc_seq:05d}"
+            rpc = f"{RPC_PREFIXO}{rpc_seq:05d}" if RPC_ORDINAL else f"{nome}_{RU}"
             put("Remote Point Custom ID", rpc)
             rpc_rows.append([nome, p["sigla"], p["sheet"], p["linha"], rpc])
             put("Remote Unit", RU); put("Signal AOR Group", AOR)

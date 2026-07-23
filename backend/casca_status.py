@@ -27,6 +27,9 @@ from openpyxl.styles import Font, PatternFill
 
 DOWN = Path("C:/Users/egnpo/Downloads")
 TDT = DOWN / "TDT_CASCA_UTR_CAS_3.xlsx"
+_n = DOWN / "TDT_CASCA_UTR_CAS_3_NOVA.xlsx"
+if _n.exists() and (not TDT.exists() or _n.stat().st_mtime > TDT.stat().st_mtime):
+    TDT = _n
 OUT = DOWN / "CASCA_STATUS_IMPORT.xlsx"
 HR = 4
 
@@ -179,9 +182,16 @@ def main():
            for dm, d in sorted(pd.items()) if not d["st"]],
           fill=lambda r: verde, larg=(46, 20, 20))
 
-    OUT.unlink(missing_ok=True)
-    wb.save(OUT)
-    print(f"{OUT.name}: {ok}/{len(sinais)} sinais mapearam "
+    destino = OUT
+    try:
+        destino.unlink(missing_ok=True)
+        wb.save(destino)
+    except PermissionError:                       # aberto no Excel
+        destino = OUT.with_name(OUT.stem + "_NOVO.xlsx")
+        destino.unlink(missing_ok=True)
+        wb.save(destino)
+    globals()["OUT"] = destino
+    print(f"{destino.name}: {ok}/{len(sinais)} sinais mapearam "
           f"({len(sinais)-ok} falharam)")
     for k, v in porstatus.most_common():
         if k != "MAPEOU":

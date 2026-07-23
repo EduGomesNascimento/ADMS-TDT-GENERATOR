@@ -695,3 +695,62 @@ Cas_obra_id_01282   CAS_TR7_TR7_TAP
 > Se a TDT anterior estiver **aberta no Excel** na hora de gerar, a saída vira
 > `TDT_CASCA_UTR_CAS_3_NOVA.xlsx`. O `check_casca.py` detecta e confere a mais
 > recente das duas — mas feche o Excel e rode de novo para consolidar o nome.
+
+---
+
+## 15. `erros6` — a fotografia real: 1282 de 1282 falharam
+
+`erros6.1.csv` (282 linhas) e `erros6.2.csv` (1000 linhas) são **duas metades do
+mesmo relatório** — o ADMS corta em 1000. Juntos: **1282 falhas, ou seja, TODOS
+os sinais**. Interseção zero, união exata com a TDT.
+
+```
+848  Found multiple devices     (ID de Mapeamento SCADA duplicado)
+424  Could not find any device  (dispositivo nao existe)
+ 10  outros                     (CDC/R90 e afins)
+```
+
+### 15.1 Por que piorou de 286 para 1282
+
+A **única** mudança entre `erros4` e `erros6` foi o Remote Point Custom ID
+(`{nome}_UTR_CAS_3` → `Cas_obra_id_00001`).
+
+É por esse campo que o ADMS reconhece um remote point de importações
+anteriores. Com o id novo, **todo sinal virou sinal novo** e o Device Mapping
+foi re-resolvido do zero. Os ~1000 que "mapeavam" antes não estavam sendo
+resolvidos a cada import — estavam **vinculados desde uma importação anterior**.
+
+Os números fecham com o que o próprio gerador reporta:
+
+| gerador | `erros6` |
+|---|---|
+| `sem dispositivo: 424` | **424** "Could not find any" |
+| `mapeiam no unifilar: 858` | **848** multiple + **10** outros = 858 |
+
+### 15.2 O que isso revela
+
+**Todo Device Mapping que existe no modelo está duplicado.** Sem exceção — o
+`Cas_Obra` é cópia integral da `CASCA` e herdou todos os IDs. Não existem 42
+dispositivos com ID repetido como parecia: são **todos**.
+
+E há uma pergunta que fica em aberto sobre os ~1000 vínculos antigos: em qual
+das duas subestações eles caíram? Se caíram na `CASCA` (a que está em
+operação), os sinais da UTR nova estão pendurados nos dispositivos errados e
+ninguém veria. **Vale conferir alguns no ADMS antes de decidir.**
+
+### 15.3 Duas TDTs para a decisão
+
+Chave `RPC_ORDINAL` em `backend/make_casca.py`:
+
+| Arquivo | Custom ID | Efeito |
+|---|---|---|
+| `TDT_CASCA_UTR_CAS_3.xlsx` | `Cas_obra_id_00001` | re-resolve tudo. Honesto, mas só entra depois que o modelo tiver IDs únicos |
+| `TDT_CASCA_UTR_CAS_3_IDANTIGO.xlsx` | `{nome}_UTR_CAS_3` | reencontra os remote points antigos e devolve o placar de ~286 falhas |
+
+As duas são idênticas em tudo o mais (mesmos 1282 sinais, mesmas coordenadas,
+mesmos Device Mappings).
+
+> **Recomendação:** o caminho de verdade continua sendo dar ID de Mapeamento
+> SCADA único aos dispositivos do `Cas_Obra`. A `_IDANTIGO` só recupera um
+> placar melhor no papel — os vínculos que ela preserva são de uma resolução
+> antiga que ninguém auditou.
