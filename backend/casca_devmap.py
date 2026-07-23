@@ -349,6 +349,30 @@ def ambiguos_no_modelo() -> dict[str, list[tuple[str, str]]]:
     return _CACHE["amb"]
 
 
+def nome_do_dispositivo(dm: str) -> str:
+    """Nome (IDOBJ_NAME) do dispositivo do Casca_Obra que tem este ID de
+    Mapeamento SCADA — só quando é UM só dentro do modelo.
+
+    Serve para preencher a coluna Device da TDT. Como o Casca_Obra é CÓPIA da
+    CASCA, os dois têm o MESMO ID; Substation sozinho não vinha resolvendo os
+    sinais discretos, e o par (Substation + Device) aperta a busca.
+    Nos 7 IDs que se repetem DENTRO do próprio Casca_Obra fica em branco: ali
+    há dois candidatos legítimos e a lista não diz qual é qual.
+    """
+    if "nomedisp" not in _CACHE:
+        por = collections.defaultdict(set)
+        if MODELO.exists():
+            txt = MODELO.read_text(encoding="utf-8-sig", errors="replace")
+            for b in re.findall(r"<ResourceDescription>(.*?)</ResourceDescription>",
+                                txt, re.S):
+                m = re.search(rf'id="{PROP_SCADA_ID}" value="([^"]+)"', b)
+                n = re.search(r'id="IDOBJ_NAME" value="([^"]*)"', b)
+                if m and n and n.group(1):
+                    por[m.group(1)].add(n.group(1))
+        _CACHE["nomedisp"] = {k: next(iter(v)) for k, v in por.items() if len(v) == 1}
+    return _CACHE["nomedisp"].get(dm, "")
+
+
 def container_da_subestacao() -> tuple[str, str]:
     """(nome, custom id) da SUBSTATION do modelo — é ela que o campo Container
     da aba DNP3_RTUs referencia (no esqueleto da LVA era 'LAGOA VERMELHA 1').

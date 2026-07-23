@@ -548,3 +548,38 @@ python backend/casca_status.py <erros.csv>
 `CASCA_STATUS_IMPORT.xlsx`: `1-Resumo`, `2-Por modulo`, `3-Por dispositivo`
 (cada Device Mapping com status e ação), `4-Sinais que falharam` e
 `5-Dispositivos OK` (os que já estão certos — não mexer).
+
+### 12.5 Coluna `Device` — a tentativa seguinte
+
+> "é cas_obra a subestação. o dvc mapping continuou o mesmo pois é uma cópia da
+> casca original"
+
+Confirmado: o `Casca_Obra` **não renumerou nada** — herdou os mesmos IDs de
+Mapeamento SCADA da CASCA. Então a ambiguidade é estrutural: o mesmo ID vale
+para dois dispositivos, um em cada subestação. Nada disso é erro da TDT.
+
+A prova de que o problema é do modelo, e não do nosso lado, é a simetria entre
+AL12 e AL13 — sinais idênticos, estrutura idêntica, resultados opostos:
+
+| Sigla | AL12 | AL13 |
+|---|---|---|
+| `DJF1` `79` `FA` `BBAB` … | ✅ `CAS_AL12_52-2_DJ` | ❌ `CAS_AL13_52-3_DJ` |
+| `50F` `51F` `81U1..81U5` … | ✅ `CAS_AL12_52-2_PROT` | ❌ `CAS_AL13_52-3_PROT` |
+
+O AL12 já está resolvido no modelo; AL13, AL14, AL15 e AL21 ainda não.
+
+**O que foi acrescentado na TDT:** além de `Substation`, agora a coluna
+**`Device`** leva o **nome do dispositivo** (`IDOBJ_NAME`) lido do XML do modelo
+— `52-03_CAS`, `CAS_AL13_52-3_PROT`, etc. O par `Substation` + `Device` aperta a
+busca muito mais que o ID sozinho.
+
+- **782 sinais** saíram com a coluna `Device` preenchida
+- **201 dos 282 que falharam** passaram a levar nome de dispositivo
+- Nos **7 IDs repetidos dentro do próprio Casca_Obra** a coluna fica em branco
+  de propósito: ali há dois candidatos legítimos (`52-21_CAS` e `52-22_CAS`,
+  `29-05_CAS` e `29-07_CAS`…) e a lista não diz qual é qual — esses só se
+  resolvem dando ID único no modelo.
+
+Se mesmo com `Substation` + `Device` a ambiguidade persistir, aí não há mais o
+que fazer pela TDT: cada dispositivo do `Casca_Obra` precisa de um ID de
+Mapeamento SCADA próprio.

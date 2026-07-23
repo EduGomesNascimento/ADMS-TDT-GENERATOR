@@ -787,7 +787,7 @@ def main():
     # A coluna Substation existe pra isso: restringe a busca a uma subestação.
     cont_nome, cont_cid = devmap.container_da_subestacao()
     ambiguos = devmap.ambiguos_no_modelo()
-    dm_ambiguo = []
+    dm_ambiguo = []; dm_device = 0
     for sheet, tipo in plano:
         ws = wb[sheet]
         lab = {ws.cell(HEADER_ROWS, c).value: c for c in range(1, ws.max_column + 1)
@@ -836,7 +836,14 @@ def main():
             # TDT atual — ver casca_devmap.py.
             dm, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
             put("Device Mapping", dm)
-            put("Substation", cont_nome)      # desambigua CASCA x Casca_Obra
+            # Substation + Device apertam a busca: o Casca_Obra e copia da
+            # CASCA e herdou os mesmos IDs de Mapeamento SCADA, entao so o ID
+            # nao basta pros sinais discretos.
+            put("Substation", cont_nome)
+            nd = devmap.nome_do_dispositivo(dm)
+            if nd:
+                put("Device", nd)
+                dm_device += 1
             if dm in ambiguos:
                 dm_ambiguo.append([nome, p["sigla"], dm,
                                    ", ".join(f"{t} {n}" for t, n in ambiguos[dm])])
@@ -918,6 +925,7 @@ def main():
     _reb = sum(1 for r in dm_rows if r[5] in _val and r[7] != "ok")
     print(f"device mapping: {len(dm_rows)} sinais | mapeiam no unifilar: {_ok} "
           f"({_reb} com dispositivo rebaixado) | sem dispositivo: {len(dm_rows) - _ok}")
+    print(f"coluna Device preenchida com o nome do dispositivo: {dm_device} sinais")
 
     buf = io.BytesIO(); wb.save(buf)
     OUT_TDT.write_bytes(excel_native.resave_native(buf.getvalue()))
