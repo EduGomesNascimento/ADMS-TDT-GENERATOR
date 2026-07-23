@@ -847,8 +847,28 @@ def main():
     putr("Remote Unit Custom ID", None)          # ADMS gera
     putr("Remote Unit AOR Group", AOR)
     putr("Remote Unit Description", FABRICANTE)
-    putr("Container Name", CONTAINER)
-    putr("Container Custom ID", None)
+    # Container = a SUBSTATION do modelo. Mandar o Custom ID junto com o nome:
+    # sem ele o ADMS reprova com "Mandatory reference ... not found in model" e
+    # a RTU nao entra — e SEM a RTU nenhum sinal entra (foi o que derrubou os
+    # 2711 registros do ERROS2.csv).
+    cont_nome, cont_cid = devmap.container_da_subestacao()
+    putr("Container Name", cont_nome or CONTAINER)
+    putr("Container Custom ID", cont_cid or None)
+    print(f"container da RTU: {cont_nome or CONTAINER!r} "
+          f"(custom id {cont_cid or 'AUSENTE — confira o XML do modelo'})")
+
+    # As abas de LINK vem do esqueleto da LVA. Se ficarem, o ADMS ATUALIZA o
+    # link da LVA ("Found one TCP/IP Link with the same name UTR_LVA_2_Link1__
+    # SAT Hughes in model") — ou seja, a importacao da CASCA mexeria na LVA.
+    # A lista da CASCA nao traz IP nem Address (estao 'X'), entao nao da pra
+    # montar o link certo: limpamos as abas e o time de comunicacao cria depois.
+    for aba in ("DNP3_TCPLinks", "DNP3_UDPLinks", "DNP3_ScanGroups"):
+        if aba not in wb.sheetnames:
+            continue
+        w = wb[aba]
+        if w.max_row > HEADER_ROWS:
+            w.delete_rows(HEADER_ROWS + 1, w.max_row - HEADER_ROWS)
+        print(f"{aba}: linhas do esqueleto removidas (nao tocar na LVA)")
 
     fbc = Counter((f["sigla"], f["molde"]) for f in usou_fallback)
     fbd = {f["sigla"]: f["desc"] for f in usou_fallback}

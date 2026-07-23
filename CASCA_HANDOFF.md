@@ -310,3 +310,61 @@ COMANDOS: 176/176 · 5 com Input de preenchimento (9599..9603)
    424 sinais pendentes casam sozinhos.
 5. **Reimportar e comparar com o `erros.csv` novo** — a contagem de falhas de
    Device Mapping tem que cair para o número de sinais dos vãos ainda não criados.
+
+---
+
+## 9. Erro de importação já resolvido — leia antes de reimportar
+
+O primeiro import (`ERROS2.csv`) devolveu **2711 falhas**. Parecia catástrofe, mas
+era **um erro só, em cascata**:
+
+```
+[Falhou] UTR_CAS_3 · Container:
+   Mandatory reference Casca_Obra not found in model.
+   Element will not be inserted nor updated.
+```
+
+A RTU não entrou → **nenhum sinal dela entrou**. Todas as outras 2710 linhas eram
+a mesma frase repetida: *"will not be imported in model since its connected (or
+parent) element needed for its validity in model was not imported"*.
+
+**Causa:** a aba `DNP3_RTUs` referenciava o container só pelo NOME.
+No esqueleto da LVA o campo vinha preenchido em par — `Container Name =
+'LAGOA VERMELHA 1'` **e** `Container Custom ID` — e eu estava zerando o Custom ID.
+
+**Correção:** `casca_devmap.container_da_subestacao()` lê o elemento
+`type="SUBSTATION"` do XML do modelo e devolve nome + `IDOBJ_CUSTOMID`
+(`Casca_Obra` / `ba13733b-569f-43e6-a2fc-01f9a438096d`). Os dois vão na TDT.
+
+### Segundo achado do mesmo CSV
+
+```
+[Informação] UTR_LVA_2_Link1__SAT Hughes:
+   Found one TCP/IP Link with the same name in model. It will be updated with new values.
+```
+
+A aba `DNP3_TCPLinks` ainda carregava a linha do **esqueleto da LVA** — importar a
+CASCA teria **alterado o link da UTR da LVA**. É o mesmo tipo de vazamento que já
+tinha acontecido antes com AL21/AL22.
+
+`DNP3_TCPLinks`, `DNP3_UDPLinks` e `DNP3_ScanGroups` agora são **esvaziadas**. A
+lista da CASCA não traz IP nem Address (estão como `X` na aba `Informações`, só a
+porta 20000 está definida), então não dá para montar o link certo — **o time de
+comunicação cria depois**, ou entra numa TDT posterior quando os IPs saírem.
+
+### Guarda no `check_casca.py`
+
+A etapa 2 agora reprova se:
+
+- a RTU estiver **sem Container Custom ID**;
+- sobrar em `DNP3_TCPLinks` / `UDPLinks` / `ScanGroups` qualquer linha de **outra
+  subestação**.
+
+### Se o erro de container voltar
+
+Se o ADMS continuar dizendo que `Casca_Obra` não existe mesmo com o Custom ID,
+o motivo é outro: o changeset **`PT-MOD-SE-CASCA` está em DRAFT** (ver
+`Changesets.csv`, estado `DRAFT` / "Loaded para edição"). Enquanto ele não for
+aplicado, a subestação `Casca_Obra` só existe dentro daquele rascunho e nenhum
+outro changeset a enxerga. Nesse caso: aplicar o changeset do modelo primeiro,
+ou importar a TDT **dentro dele**.

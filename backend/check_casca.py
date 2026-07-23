@@ -97,6 +97,17 @@ def ler_tdt():
     hdr = {str(ws.cell(HR, c).value or "").strip(): c
            for c in range(1, ws.max_column + 1)}
     out["_RTU"] = {k: ws.cell(HR + 1, c).value for k, c in hdr.items()}
+    # abas de configuracao que NAO podem sobrar do esqueleto
+    out["_CFG"] = {}
+    for sn in ("DNP3_TCPLinks", "DNP3_UDPLinks", "DNP3_ScanGroups"):
+        if sn not in wb.sheetnames:
+            continue
+        w = wb[sn]
+        out["_CFG"][sn] = [
+            [w.cell(r, c).value for c in range(1, w.max_column + 1)]
+            for r in range(HR + 1, w.max_row + 1)
+            if any(w.cell(r, c).value not in (None, "")
+                   for c in range(1, w.max_column + 1))]
     return out
 
 
@@ -129,6 +140,7 @@ def main():
     print("=== 2) TDT ===")
     tdt = ler_tdt()
     rtu = tdt.pop("_RTU")
+    cfg = tdt.pop("_CFG", {})
     for k, esperado in (("Remote Unit (Terminal Server) Name", RU),
                         ("Remote Unit AOR Group", AOR),
                         ("Container Name", CONT)):
@@ -136,6 +148,21 @@ def main():
         print(f"  RTU {k}: {got!r}")
         if got != esperado:
             falha(f"RTU {k} = {got!r}, esperado {esperado!r}")
+    # sem Container Custom ID o ADMS reprova a RTU e derruba TODOS os sinais
+    ccid = str(rtu.get("Container Custom ID") or "")
+    print(f"  RTU Container Custom ID: {ccid!r}")
+    if not ccid:
+        falha("RTU sem Container Custom ID — o ADMS responde 'Mandatory "
+              "reference nao encontrada' e nenhum sinal entra")
+    # nenhuma sobra do esqueleto da LVA nas abas de configuracao
+    for sn, linhas in cfg.items():
+        alheias = [l for l in linhas
+                   if any(RU not in str(v or "") and "LVA" in str(v or "")
+                          for v in l)]
+        print(f"  {sn}: {len(linhas)} linha(s)")
+        for l in alheias:
+            falha(f"{sn}: linha de OUTRA subestacao ({l[0]!r}) — importar isso "
+                  f"alteraria a UTR da LVA")
     nomes = collections.Counter()
     total = 0
     # AnalogSignals e DiscreteAnalog dividem o espaco de indices analogicos

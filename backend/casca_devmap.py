@@ -266,6 +266,29 @@ def resolver(nome: str, sigla: str) -> tuple[str, str, str]:
                               else f"vao {mod} nao existe no unifilar/ADMS")
 
 
+def container_da_subestacao() -> tuple[str, str]:
+    """(nome, custom id) da SUBSTATION do modelo — é ela que o campo Container
+    da aba DNP3_RTUs referencia (no esqueleto da LVA era 'LAGOA VERMELHA 1').
+    Mandar o Custom ID junto evita o erro 'Mandatory reference ... not found',
+    que reprova a RTU e, em cascata, TODOS os sinais dela."""
+    if "cont" in _CACHE:
+        return _CACHE["cont"]
+    nome = cid = ""
+    if MODELO.exists():
+        txt = MODELO.read_text(encoding="utf-8-sig", errors="replace")
+        for b in re.findall(r"<ResourceDescription>(.*?)</ResourceDescription>",
+                            txt, re.S):
+            if 'type="SUBSTATION"' not in b:
+                continue
+            n = re.search(r'id="IDOBJ_NAME" value="([^"]*)"', b)
+            c = re.search(r'id="IDOBJ_CUSTOMID" value="([^"]*)"', b)
+            nome = n.group(1) if n else ""
+            cid = c.group(1) if c else ""
+            break
+    _CACHE["cont"] = (nome, cid)
+    return _CACHE["cont"]
+
+
 def device_mapping(nome: str, sigla: str) -> tuple[str, str]:
     dm, origem, _ = resolver(nome, sigla)
     return dm, origem
