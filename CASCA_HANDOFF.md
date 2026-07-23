@@ -609,3 +609,63 @@ discretos.
 Agora `CONTAINER = "Cas_Obra"` em `make_casca.py` alimenta os dois campos, e o
 `check_casca.py` confere. **Lição:** o nome do modelo aplicado vem da árvore do
 ADMS, não do XML do rascunho.
+
+---
+
+## 13. Conclusão: `Substation` e `Device` NÃO desempatam. É o modelo.
+
+`erros4.csv` saiu com **exatamente as mesmas 286 falhas** de `eros3.csv` —
+`0 passaram a mapear, 0 novas falhas` — mesmo com:
+
+- `Substation = Cas_Obra` (o nome certo, da árvore do ADMS)
+- coluna `Device` preenchida em 782 sinais com o nome do dispositivo
+
+**O ADMS resolve o Device Mapping globalmente e ignora as colunas de
+localização.** Não existe mais nada que a TDT possa fazer: enquanto o mesmo
+"ID de Mapeamento SCADA" apontar para dois dispositivos, o sinal não mapeia.
+
+As colunas ficam preenchidas (a informação está correta e não atrapalha), mas
+não conte com elas para desempatar.
+
+### 13.1 O que resolve — trabalho no modelo
+
+**A) 42 dispositivos com ID duplicado → 201 sinais**
+
+Dar um ID de Mapeamento SCADA **próprio** ao dispositivo do `Cas_Obra`.
+
+| ID atual (repetido) | Sinais |
+|---|---|
+| `CAS_AL13_52-3_DJ` · `CAS_AL14_52-4_DJ` · `CAS_AL15_52-5_DJ` · `CAS_AL21_52-6_DJ` | 20 cada |
+| `CAS_AL13_52-3_PROT` · `CAS_AL14_52-4_PROT` · `CAS_AL15_52-5_PROT` · `CAS_AL21_52-6_PROT` | 16 cada |
+| `CAS_B138_B138_BP` | 12 |
+| `CAS_BP23_29-36_SEC` | 11 |
+| `CAS_BP23_BP23_BP` · `CAS_TSA3_RET_RET` | 2 cada |
+| 30 relés/seccionadoras avulsos (`_PROT_2649`, `_PROT_51N`, `_PROT_50N`, `_PROT_51N1`, `29-14_SEC`…) | 1 cada |
+
+> **O AL12 é a prova de que funciona.** Ele tem os mesmos sinais do AL13, com a
+> mesma estrutura, e mapeia 48 de 52 — porque o ID dele já foi resolvido. Basta
+> repetir em AL13, AL14, AL15 e AL21.
+
+**B) 55 dispositivos a criar → 81 sinais**
+
+Vãos que não existem no `Cas_Obra`: `AL18/24-1` (transferência), `TSA2/RET2`,
+`BP213.8`, e relés soltos de `AL24`, `AL25`, `AL26`, `TRF29`, `AL18/52-18`,
+`AL28` (`PROT_2649`, `PROT_51N`, `PROT_81SU`, `DJ`).
+
+**C) 4 sinais com ponto já existente**
+
+`CDC` e `R90` do TR6/TR7 — o dispositivo já tem o ponto vindo da UTR IEC antiga.
+
+### 13.2 Placar
+
+```
+1282 sinais na TDT
+1000 mapearam            (78%)
+ 201 ID duplicado no modelo   -> A
+  81 dispositivo nao existe   -> B
+   4 ponto ja existe          -> C
+```
+
+A lista completa, dispositivo por dispositivo, está em
+`CASCA_STATUS_IMPORT.xlsx`, aba `3-Por dispositivo` (verde = pronto, amarelo =
+parcial, vermelho = nada mapeou) e `4-Sinais que falharam`.
