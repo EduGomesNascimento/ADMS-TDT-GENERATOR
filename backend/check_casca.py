@@ -12,12 +12,17 @@ Uso: python check_casca.py
 """
 from __future__ import annotations
 import collections
+import re
 from pathlib import Path
 import openpyxl
 
 D = Path("C:/Users/egnpo/Downloads")
 LISTA = D / "RGE ADMS_Lista Pontos Casca_CORRIGIDA.xlsx"
 TDT = D / "TDT_CASCA_UTR_CAS_3.xlsx"
+if not TDT.exists() or (D / "TDT_CASCA_UTR_CAS_3_NOVA.xlsx").exists():
+    _n = D / "TDT_CASCA_UTR_CAS_3_NOVA.xlsx"
+    if _n.exists() and _n.stat().st_mtime > TDT.stat().st_mtime:
+        TDT = _n          # a anterior estava aberta no Excel na hora de gerar
 SKIP = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
 HR = 4
 RU, AOR, CONT = "UTR_CAS_3", "CAS Trans", "Cas_Obra"
@@ -201,6 +206,21 @@ def main():
         print(f"  espaco DNP3 {g}: {len(coords)} coords | duplicadas: {len(dup)}")
         if dup:
             falha(f"espaco {g}: Input Coordinates repetidas {sorted(dup)[:10]}")
+    # Remote Point Custom ID: ordinal Cas_obra_id_00001, unico em toda a TDT
+    rpcs = [str(x.get("Remote Point Custom ID") or "")
+            for linhas in tdt.values() for x in linhas]
+    fora = [r for r in rpcs if not re.fullmatch(r"Cas_obra_id_\d{5}", r)]
+    duprpc = [r for r, c in collections.Counter(rpcs).items() if c > 1]
+    print(f"  Remote Point Custom ID: {len(rpcs)} | fora do padrao: {len(fora)} | "
+          f"repetidos: {len(duprpc)}")
+    if fora:
+        falha(f"Remote Point Custom ID fora do padrao Cas_obra_id_00000: {fora[:5]}")
+    if duprpc:
+        falha(f"Remote Point Custom ID repetido: {duprpc[:5]}")
+    nums = sorted(int(r.split("_")[-1]) for r in rpcs if r not in fora)
+    if nums and nums != list(range(nums[0], nums[0] + len(nums))):
+        falha("Remote Point Custom ID com buraco na sequencia")
+
     dupn = [n for n, c in nomes.items() if c > 1]
     print(f"  total {total} sinais | nomes duplicados: {len(dupn)}")
     if dupn:

@@ -71,6 +71,11 @@ FABRICANTE = "ELIPSE"
 # só tem o nome: com o nome errado o ADMS não conseguia restringir a busca e a
 # ambiguidade CASCA x Cas_Obra continuava derrubando os discretos.
 CONTAINER = "Cas_Obra"
+
+# Remote Point Custom ID: sequencia ordinal propria da UTR nova, no formato
+# Cas_obra_id_00001. Precisa ser UNICO — se repetir um custom id que ja existe
+# no modelo, o ADMS casa com o remote point errado.
+RPC_PREFIXO = "Cas_obra_id_"
 HEADER_ROWS = 4
 SKIP_SHEETS = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
 
@@ -565,6 +570,10 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
              for m in sorted({x["mod"] for x in dm.get("pendentes", [])
                               if x["pend"].startswith("vao ")})])
 
+    sheet("18-Remote Point Custom ID",
+          ["NOME na TDT", "SIGLA", "Aba da lista", "Linha", "Remote Point Custom ID"],
+          list(dm.get("rpc", [])))
+
     sheet("17-ID duplicado no modelo",
           ["NOME na TDT", "SIGLA", "Device Mapping", "Dispositivos que respondem"],
           list(dm.get("ambiguos", [])))
@@ -796,6 +805,7 @@ def main():
     cont_nome = CONTAINER          # nome da arvore do ADMS, nao o do rascunho
     ambiguos = devmap.ambiguos_no_modelo()
     dm_ambiguo = []; dm_device = 0
+    rpc_seq = 0; rpc_rows = []
     for sheet, tipo in plano:
         ws = wb[sheet]
         lab = {ws.cell(HEADER_ROWS, c).value: c for c in range(1, ws.max_column + 1)
@@ -837,7 +847,14 @@ def main():
             if p.get("desc"):
                 put("Signal Alias", p["desc"])
             put("Signal Custom ID", None)
-            put("Remote Point Custom ID", f"{nome}_{RU}")
+            # Remote Point Custom ID ordinal, unico em toda a TDT.
+            # Antes era {nome}_{RU}: longo e derivado do nome, o que arrisca
+            # colidir com remote point ja existente no modelo. Agora e uma
+            # sequencia limpa Cas_obra_id_00001, 00002, ...
+            rpc_seq += 1
+            rpc = f"{RPC_PREFIXO}{rpc_seq:05d}"
+            put("Remote Point Custom ID", rpc)
+            rpc_rows.append([nome, p["sigla"], p["sheet"], p["linha"], rpc])
             put("Remote Unit", RU); put("Signal AOR Group", AOR)
             # Device Mapping SEMPRE sobrescrito: o molde traz o DM da subestação
             # de ORIGEM (lixo). Aqui vale a regra da PRÓPRIA CASCA, aprendida da
@@ -924,7 +941,7 @@ def main():
     fbd = {f["sigla"]: f["desc"] for f in usou_fallback}
     _rel([[sg, mo, n, fbd.get(sg, "")] for (sg, mo), n in sorted(fbc.items(), key=lambda x: -x[1])],
          {"linhas": dm_rows, "origem": dm_origem, "pendentes": dm_pendentes,
-          "ambiguos": dm_ambiguo},
+          "ambiguos": dm_ambiguo, "rpc": rpc_rows},
          {"realoc": cmd_realoc, "orfaos": cmd_orfaos})
     print(f"relatorio: {OUT_REL.name} ({len(mapa)} coords, {len(dups)} repetidas, "
           f"{len(usou_fallback)} por equivalencia)")
@@ -936,8 +953,15 @@ def main():
     print(f"coluna Device preenchida com o nome do dispositivo: {dm_device} sinais")
 
     buf = io.BytesIO(); wb.save(buf)
-    OUT_TDT.write_bytes(excel_native.resave_native(buf.getvalue()))
-    print(f"TDT: {OUT_TDT.name} | {dict(gerados)} | container={CONTAINER} | "
+    dados = excel_native.resave_native(buf.getvalue())
+    destino = OUT_TDT
+    try:
+        destino.write_bytes(dados)
+    except PermissionError:                       # aberta no Excel
+        destino = OUT_TDT.with_name(OUT_TDT.stem + "_NOVA.xlsx")
+        destino.write_bytes(dados)
+        print("  (TDT anterior aberta no Excel — gravada como _NOVA)")
+    print(f"TDT: {destino.name} | {dict(gerados)} | container={CONTAINER} | "
           f"pulados (sem template): {len(pulados)}")
     for p in pulados[:20]:
         print(f"   PULADO {p['sheet']}!L{p['linha']} {p['tipo']} {p['sigla']} {p['nome']}")

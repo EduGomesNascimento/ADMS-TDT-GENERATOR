@@ -669,3 +669,29 @@ Vãos que não existem no `Cas_Obra`: `AL18/24-1` (transferência), `TSA2/RET2`,
 A lista completa, dispositivo por dispositivo, está em
 `CASCA_STATUS_IMPORT.xlsx`, aba `3-Por dispositivo` (verde = pronto, amarelo =
 parcial, vermelho = nada mapeou) e `4-Sinais que falharam`.
+
+---
+
+## 14. Remote Point Custom ID ordinal
+
+Antes o campo era derivado do nome (`CAS_LT1_89-2_SECC_UTR_CAS_3`) — longo e com
+risco de bater num remote point que já existe no modelo. Agora é uma sequência
+limpa e própria da UTR nova:
+
+```
+Cas_obra_id_00001   CAS_LT1_89-2_SECC
+Cas_obra_id_00002   CAS_LT1_89-2_43LR
+...
+Cas_obra_id_01282   CAS_TR7_TR7_TAP
+```
+
+- prefixo em `RPC_PREFIXO`, em `backend/make_casca.py`
+- **1282 IDs, todos únicos**, faixa `00001..01282`, contígua
+- o de-para completo está na aba **`18-Remote Point Custom ID`** do relatório
+  (nome do sinal, sigla, aba e linha da lista de origem)
+- `check_casca.py` reprova se algum fugir do padrão `Cas_obra_id_00000`,
+  repetir, ou se a sequência tiver buraco
+
+> Se a TDT anterior estiver **aberta no Excel** na hora de gerar, a saída vira
+> `TDT_CASCA_UTR_CAS_3_NOVA.xlsx`. O `check_casca.py` detecta e confere a mais
+> recente das duas — mas feche o Excel e rode de novo para consolidar o nome.
