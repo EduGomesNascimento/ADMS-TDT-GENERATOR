@@ -21,6 +21,15 @@ TDT = D / "TDT_CASCA_UTR_CAS_3.xlsx"
 SKIP = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
 HR = 4
 RU, AOR, CONT = "UTR_CAS_3", "CAS Trans", "Casca_Obra"
+ALIAS = "CAS"
+
+
+def _norm_alias(nome: str) -> str:
+    """A lista tem 4 linhas com o alias de OUTRA SE (IMA_...). O gerador troca
+    para CAS_ ao montar a TDT — aqui a conferencia faz o mesmo, senao acusa
+    'ausente na TDT' de mentira."""
+    return (nome if not nome or nome.startswith(f"{ALIAS}_")
+            else "_".join([ALIAS] + nome.split("_")[1:]))
 
 erros = []
 
@@ -64,7 +73,7 @@ def ler_lista():
             pts.append({
                 "sheet": sn, "linha": r, "tipo": tipo,
                 "sigla": str(gv("SIGLA SINAL") or "").strip(),
-                "nome": str(gv("NOME") or "").strip(),
+                "nome": _norm_alias(str(gv("NOME") or "").strip()),
                 "idx": gv("INDEX DNP3"),
                 "desc": str(gv("DESCRIÇÃO DO PONTO") or "").strip(),
                 "escala": gv("Escala"),

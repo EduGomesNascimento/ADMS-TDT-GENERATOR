@@ -368,3 +368,64 @@ o motivo é outro: o changeset **`PT-MOD-SE-CASCA` está em DRAFT** (ver
 aplicado, a subestação `Casca_Obra` só existe dentro daquele rascunho e nenhum
 outro changeset a enxerga. Nesse caso: aplicar o changeset do modelo primeiro,
 ou importar a TDT **dentro dele**.
+
+---
+
+## 10. Segunda rodada de import — `errpsmapping.csv`
+
+Com o container resolvido, a RTU entrou e os sinais foram processados. Sobraram
+**1000 erros, todos de `Device Mapping`**, em duas classes.
+
+### 10.1 "Found multiple devices" — 665 sinais
+
+O `Casca_Obra` é uma **cópia** da `CASCA`. Os dispositivos clonados **herdaram o
+mesmo "ID de Mapeamento SCADA"** dos originais, então `CAS_AL12_52-2_DJ` responde
+por **dois** disjuntores — o da CASCA e o do Casca_Obra — e o ADMS se recusa a
+escolher.
+
+**Correção:** preencher a coluna **`Substation`** de todo sinal com `Casca_Obra`.
+Ela existe exatamente para restringir a busca a uma subestação. Nas TDTs antigas
+essa coluna vinha vazia porque não havia clone e não havia ambiguidade.
+
+### 10.2 Ambiguidade que a coluna `Substation` NÃO resolve — 63 sinais
+
+**7 IDs estão repetidos dentro do próprio `Casca_Obra`** — os dois candidatos
+moram na mesma subestação, então nenhuma coluna da TDT desempata:
+
+| ID de Mapeamento SCADA | Dispositivos que respondem | Sinais |
+|---|---|---|
+| `CAS_LTPRI_52-21_DJ` | disjuntores `52-21_CAS` e `52-22_CAS` | 38 |
+| `CAS_LTMRU_29-5_SEC` | seccionadoras `29-05_CAS` e `29-07_CAS` | 11 |
+| `CAS_LTMRU_LTMRU_TC` | `CAS_LTKVM_LTKVM_TC` e `CAS_LTKVM_TC` | 10 |
+| `CAS_LTMRU_LTMRU_TP` | `CAS_LTKVM_TP` e `CAS_LTKVM_LTKVM_TP` | 4 |
+| `CAS_LTMRU_89-112_SEC` · `CAS_LTPRI_LTPRI_PROT_81_U1` · `CAS_LTPRI_LTPRI_PROT_81SU` | dois cada | — |
+
+**Isso é resolvido no modelo, não na TDT:** cada dispositivo precisa de um ID
+único (ex.: `CAS_LTPRI_52-22_DJ` para o segundo disjuntor). Aba **`17-ID duplicado
+no modelo`** do relatório lista sinal por sinal.
+
+### 10.3 Alias de outra subestação — 4 sinais
+
+Quatro linhas da lista saíam com o alias **`IMA_`** em vez de `CAS_`:
+
+```
+BARRA!L51  IMA_BP113.8_BP113.8_FGOO      RET 1!L14  IMA_TSA_RET_NEGT
+BARRA!L52  IMA_BP213.8_BP213.8_FGOO      RET 1!L15  IMA_TSA_RET_POST
+```
+
+A coluna SUBESTAÇÃO dessas linhas ficou de outra SE. O NOME e o Device Mapping
+saíam errados. O gerador agora **normaliza o alias para `CAS`** e registra o
+achado na aba `15`. Vale corrigir a célula na planilha de origem.
+
+### 10.4 "Could not find any device" — 335 sinais
+
+Os vãos que não existem no unifilar (`AL18`, `AL24`, `AL25`, `AL26`, `TRF29`,
+`AL28`, `IB20`, `BP213.8`, `TSA2`). Já esperado — aba `13`.
+
+### Resumo do que deve cair no próximo import
+
+| Antes | Depois |
+|---|---|
+| 665 "multiple devices" | ~63 (só os 7 IDs duplicados dentro do modelo) |
+| 4 com alias `IMA_` | 0 |
+| 335 "could not find" | ~335, até os dispositivos da aba 13 serem criados |

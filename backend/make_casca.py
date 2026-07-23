@@ -61,6 +61,7 @@ FILLER_BASE = 9599
 
 RU = "UTR_CAS_3"
 AOR = "CAS Trans"
+ALIAS = "CAS"                   # sigla da SE (aba Informações da lista)
 FABRICANTE = "ELIPSE"
 CONTAINER = "Casca_Obra"        # container da RTU nova (informado pelo usuário)
 HEADER_ROWS = 4
@@ -100,6 +101,12 @@ def read_lista():
             reserva = not sigla or not nome
             if reserva and not nome and not _nums(idxv):
                 continue                      # linha vazia de verdade: ignora
+            # alias errado na origem: 4 linhas saem como IMA_... (a coluna
+            # SUBESTAÇÃO ficou de outra SE). Sem corrigir, o Device Mapping
+            # tambem sai IMA_ e o ADMS nao acha o dispositivo.
+            nome_orig = nome
+            if nome and not nome.startswith(f"{ALIAS}_"):
+                nome = "_".join([ALIAS] + nome.split("_")[1:])
             pts.append({
                 "sheet": sn, "linha": ri,
                 "usado": (not reserva
@@ -107,7 +114,7 @@ def read_lista():
                 "reserva": reserva,
                 "tipo": tipo,
                 "sigla": str(g(r, "SIGLA SINAL") or "").strip(),
-                "nome": nome,
+                "nome": nome, "nome_orig": nome_orig,
                 "idx": str(g(r, "INDEX DNP3") or "").strip(),
                 "tipoPt": str(g(r, "Tipo") or "").strip(),
                 "n0": str(g(r, "Nível Lógico 0") or "").strip(),
@@ -229,6 +236,20 @@ def avisos_lista(pts):
                        "Os dois vaos geram sinais com o mesmo prefixo: os NOMEs "
                        "colidem e o Device Mapping aponta pro mesmo dispositivo.",
                        "Dar um numero de modulo proprio para cada vao na planilha."])
+    # 4) alias da subestação errado no NOME (coluna SUBESTAÇÃO de outra SE)
+    trocados = defaultdict(list)
+    for p in pts:
+        o = p.get("nome_orig") or p["nome"]
+        if o != p["nome"]:
+            trocados[o.split("_")[0]].append(f'{p["sheet"]}!L{p["linha"]} {o}')
+    for alias_errado, lst in sorted(trocados.items()):
+        av.append(["ALTA", "Alias de OUTRA subestacao no NOME", alias_errado,
+                   "; ".join(lst),
+                   f"A coluna SUBESTACAO dessas linhas ficou '{alias_errado}' em vez "
+                   f"de '{ALIAS}', entao o NOME e o Device Mapping saem errados e o "
+                   f"ADMS nao acha o dispositivo.",
+                   f"Corrigir a celula para {ALIAS} na planilha. Na TDT ja foi "
+                   f"trocado automaticamente."])
     av.sort(key=lambda x: (x[0] != "ALTA", x[1], str(x[2])))
     return av
 
@@ -537,6 +558,10 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
              for m in sorted({x["mod"] for x in dm.get("pendentes", [])
                               if x["pend"].startswith("vao ")})])
 
+    sheet("17-ID duplicado no modelo",
+          ["NOME na TDT", "SIGLA", "Device Mapping", "Dispositivos que respondem"],
+          list(dm.get("ambiguos", [])))
+
     sheet("14-DM rebaixado",
           ["NOME na TDT", "SIGLA", "Device Mapping usado", "Motivo"],
           [[x["nome"], x["sigla"], x["dm"], x["pend"]]
@@ -756,6 +781,13 @@ def main():
              ("DNP3_DiscreteAnalog", "A/D")]
     gerados = defaultdict(int); pulados = []; usou_fallback = []
     dm_rows = []; dm_origem = Counter(); dm_pendentes = []
+    # O Casca_Obra é CÓPIA da CASCA: os dispositivos clonados herdaram o MESMO
+    # "ID de Mapeamento SCADA" dos originais, então o ADMS acha DOIS candidatos
+    # e responde "Found multiple devices that correspond to Device Mapping".
+    # A coluna Substation existe pra isso: restringe a busca a uma subestação.
+    cont_nome, cont_cid = devmap.container_da_subestacao()
+    ambiguos = devmap.ambiguos_no_modelo()
+    dm_ambiguo = []
     for sheet, tipo in plano:
         ws = wb[sheet]
         lab = {ws.cell(HEADER_ROWS, c).value: c for c in range(1, ws.max_column + 1)
@@ -804,6 +836,10 @@ def main():
             # TDT atual — ver casca_devmap.py.
             dm, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
             put("Device Mapping", dm)
+            put("Substation", cont_nome)      # desambigua CASCA x Casca_Obra
+            if dm in ambiguos:
+                dm_ambiguo.append([nome, p["sigla"], dm,
+                                   ", ".join(f"{t} {n}" for t, n in ambiguos[dm])])
             dm_origem[dm_o] += 1
             dm_rows.append([p["sheet"], p["linha"], p["tipo"], p["sigla"], nome, dm,
                             dm_o, dm_pend or "ok"])
@@ -851,7 +887,6 @@ def main():
     # sem ele o ADMS reprova com "Mandatory reference ... not found in model" e
     # a RTU nao entra — e SEM a RTU nenhum sinal entra (foi o que derrubou os
     # 2711 registros do ERROS2.csv).
-    cont_nome, cont_cid = devmap.container_da_subestacao()
     putr("Container Name", cont_nome or CONTAINER)
     putr("Container Custom ID", cont_cid or None)
     print(f"container da RTU: {cont_nome or CONTAINER!r} "
@@ -873,7 +908,8 @@ def main():
     fbc = Counter((f["sigla"], f["molde"]) for f in usou_fallback)
     fbd = {f["sigla"]: f["desc"] for f in usou_fallback}
     _rel([[sg, mo, n, fbd.get(sg, "")] for (sg, mo), n in sorted(fbc.items(), key=lambda x: -x[1])],
-         {"linhas": dm_rows, "origem": dm_origem, "pendentes": dm_pendentes},
+         {"linhas": dm_rows, "origem": dm_origem, "pendentes": dm_pendentes,
+          "ambiguos": dm_ambiguo},
          {"realoc": cmd_realoc, "orfaos": cmd_orfaos})
     print(f"relatorio: {OUT_REL.name} ({len(mapa)} coords, {len(dups)} repetidas, "
           f"{len(usou_fallback)} por equivalencia)")

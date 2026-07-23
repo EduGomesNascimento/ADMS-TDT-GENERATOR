@@ -266,6 +266,29 @@ def resolver(nome: str, sigla: str) -> tuple[str, str, str]:
                               else f"vao {mod} nao existe no unifilar/ADMS")
 
 
+def ambiguos_no_modelo() -> dict[str, list[tuple[str, str]]]:
+    """IDs de Mapeamento SCADA usados por MAIS DE UM elemento DENTRO do próprio
+    Casca_Obra. Nesses o ADMS responde "Found multiple devices..." e a coluna
+    Substation não resolve (os dois candidatos estão na mesma subestação) —
+    só dando ID único a cada dispositivo no modelo."""
+    if "amb" in _CACHE:
+        return _CACHE["amb"]
+    por = collections.defaultdict(list)
+    if MODELO.exists():
+        txt = MODELO.read_text(encoding="utf-8-sig", errors="replace")
+        for b in re.findall(r"<ResourceDescription>(.*?)</ResourceDescription>",
+                            txt, re.S):
+            m = re.search(rf'id="{PROP_SCADA_ID}" value="([^"]+)"', b)
+            if not m:
+                continue
+            t = re.search(r'type="([^"]+)"', b)
+            n = re.search(r'id="IDOBJ_NAME" value="([^"]*)"', b)
+            por[m.group(1)].append((t.group(1) if t else "?",
+                                    n.group(1) if n else ""))
+    _CACHE["amb"] = {k: v for k, v in por.items() if len(v) > 1}
+    return _CACHE["amb"]
+
+
 def container_da_subestacao() -> tuple[str, str]:
     """(nome, custom id) da SUBSTATION do modelo — é ela que o campo Container
     da aba DNP3_RTUs referencia (no esqueleto da LVA era 'LAGOA VERMELHA 1').
