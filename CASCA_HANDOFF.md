@@ -754,3 +754,24 @@ mesmos Device Mappings).
 > SCADA único aos dispositivos do `Cas_Obra`. A `_IDANTIGO` só recupera um
 > placar melhor no papel — os vínculos que ela preserva são de uma resolução
 > antiga que ninguém auditou.
+
+---
+
+## 16. Signal Alias = data da leva
+
+Convenção do usuário: **o Signal Alias é a data de hoje**, igual em todos os
+sinais — serve para marcar a importação.
+
+```
+Signal Alias   23/07/2026     (os 1282 sinais)
+Description    SECCIONADORA CARGA, 43 - CHAVE LOCAL REMOTO, ...
+```
+
+A **descrição do ponto**, que antes ia no Signal Alias, passou para a coluna
+**`Description`** — senão o texto da lista se perderia. Os 1282 sinais têm as
+duas colunas preenchidas.
+
+`SIGNAL_ALIAS` em `backend/make_casca.py` recalcula na hora de gerar
+(`date.today()`, formato `dd/mm/aaaa`). O `check_casca.py` confere que o alias
+é uniforme, está no formato certo, e que a `Description` bate com a descrição
+da lista de pontos.

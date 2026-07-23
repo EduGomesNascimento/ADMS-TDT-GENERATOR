@@ -24,6 +24,7 @@ from __future__ import annotations
 import io, json, re
 from collections import defaultdict, OrderedDict, Counter
 from copy import copy
+from datetime import date
 from pathlib import Path
 import openpyxl
 from openpyxl.styles import Font, PatternFill
@@ -87,6 +88,11 @@ CONTAINER = "Cas_Obra"
 #            antiga, que ninguem conferiu em qual das duas subestacoes caiu.
 RPC_ORDINAL = True
 RPC_PREFIXO = "Cas_obra_id_"
+
+# Signal Alias = data de hoje (dd/mm/aaaa), igual em todos os sinais da leva.
+# Convenção do usuário para marcar a importação. A descrição do ponto passa a
+# ir na coluna Description.
+SIGNAL_ALIAS = date.today().strftime("%d/%m/%Y")
 HEADER_ROWS = 4
 SKIP_SHEETS = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
 
@@ -854,9 +860,12 @@ def main():
                 c = L(name)
                 if c: row[c - 1] = val
             put("Signal Name", nome); put("Remote Point Name", nome)
-            # descrição AUTORITATIVA da lista (o molde pode ser de sigla equivalente)
+            # Signal Alias = data de hoje (convenção do usuário: marca a leva).
+            # A DESCRIÇÃO da lista vai para Description, que é onde o texto do
+            # ponto tem que ficar — senão ela se perderia.
+            put("Signal Alias", SIGNAL_ALIAS)
             if p.get("desc"):
-                put("Signal Alias", p["desc"])
+                put("Description", p["desc"])
             put("Signal Custom ID", None)
             # Remote Point Custom ID ordinal, unico em toda a TDT.
             # Antes era {nome}_{RU}: longo e derivado do nome, o que arrisca

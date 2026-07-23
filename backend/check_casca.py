@@ -221,6 +221,15 @@ def main():
     if nums and nums != list(range(nums[0], nums[0] + len(nums))):
         falha("Remote Point Custom ID com buraco na sequencia")
 
+    # Signal Alias = data da leva, igual em todos (convencao do usuario)
+    alias = collections.Counter(str(x.get("Signal Alias") or "")
+                                for linhas in tdt.values() for x in linhas)
+    print(f"  Signal Alias: {alias.most_common(3)}")
+    if len(alias) != 1:
+        falha(f"Signal Alias nao e uniforme: {alias.most_common(5)}")
+    elif not re.fullmatch(r"\d{2}/\d{2}/\d{4}", next(iter(alias))):
+        falha(f"Signal Alias nao esta no formato dd/mm/aaaa: {next(iter(alias))!r}")
+
     dupn = [n for n, c in nomes.items() if c > 1]
     print(f"  total {total} sinais | nomes duplicados: {len(dupn)}")
     if dupn:
@@ -341,10 +350,12 @@ def main():
         if not k:
             continue
         x = porsinal[k]
-        if p["desc"] and str(x.get("Signal Alias") or "").strip() != p["desc"]:
+        # a DESCRICAO do ponto vai na coluna Description; o Signal Alias e a
+        # data da leva (conferido em bloco logo abaixo)
+        if p["desc"] and str(x.get("Description") or "").strip() != p["desc"]:
             dif_desc += 1
             if dif_desc <= 5:
-                falha(f"descricao: {k} TDT={x.get('Signal Alias')!r} lista={p['desc']!r}")
+                falha(f"descricao: {k} TDT={x.get('Description')!r} lista={p['desc']!r}")
         if p["tipo"] in ("A", "A/D") and p["escala"] not in (None, "", "-"):
             if str(x.get("Scaling Factor") or "").strip() != str(p["escala"]).strip():
                 dif_esc += 1
