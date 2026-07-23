@@ -270,6 +270,61 @@ def sufixo(sig: str, device: str) -> tuple[str, str]:
 
 
 # ─── resolução contra o modelo ───────────────────────────────────────────────
+def catalogo_estrito() -> set[str]:
+    """SÓ os Device Mappings que existem na TDT atual da CASCA (CASCA.xlsx).
+
+    "todos os device mapping necessarios estao aqui. nao existe outros."
+    São 332 valores CAS_*; os ~158 numéricos são dos religadores RAD_* e não
+    servem para a UTR nova.
+    """
+    if "estrito" not in _CACHE:
+        _, todos = dm_da_tdt_original()
+        _CACHE["estrito"] = {d for d in todos if d.startswith("CAS_")}
+    return _CACHE["estrito"]
+
+
+def resolver_estrito(nome: str, sigla: str) -> tuple[str | None, str]:
+    """(device_mapping, origem) usando SOMENTE o catálogo da CASCA.xlsx.
+    Devolve (None, motivo) quando nao ha alvo valido — o sinal fica de fora."""
+    val = catalogo_estrito()
+    p = str(nome).split("_")
+    alias = p[0] if p else "CAS"
+    mod = p[1] if len(p) > 1 else ""
+    dev = p[2] if len(p) > 2 else mod
+    suf, _ = sufixo(sigla, dev)
+
+    equiv = MODULO_EQUIV.get(mod)
+    mod_alvo = equiv[0] if equiv else mod
+    nota = f" [{mod}->{mod_alvo}]" if equiv else ""
+
+    # 1) o que a TDT atual usa para este vao + esta sigla
+    orig, _t = dm_da_tdt_original()
+    achado = orig.get((mod_alvo, sigla))
+    if achado in val:
+        return achado, f"TDT atual: (vao, sigla){nota}"
+    # 2) mesmo vao, mesmo device, mesmo sufixo
+    cand = f"{alias}_{mod_alvo}_{dev}_{suf}"
+    if cand in val:
+        return cand, f"TDT atual: exato{nota}"
+    # 3) mesmo vao + mesmo sufixo, equipamento renumerado
+    do_vao = {d: d.split("_", 3)[3] if d.count("_") > 2 else ""
+              for d in val if d.split("_")[1:2] == [mod_alvo]}
+    porsuf = {}
+    for d, s in do_vao.items():
+        porsuf.setdefault(s, d)
+    if suf in porsuf:
+        return porsuf[suf], f"TDT atual: equip. renumerado{nota}"
+    # 4) rele especifico inexistente -> rele generico do vao
+    if suf.startswith("PROT_") and "PROT" in porsuf:
+        return porsuf["PROT"], f"TDT atual: rele generico{nota}"
+    # 5) rebaixa por tipo de dispositivo, depois ultimo recurso
+    for alt in _DEGRADA.get(suf, ()) + _ULTIMO_RECURSO:
+        if alt in porsuf:
+            return porsuf[alt], f"TDT atual: fallback {alt}{nota}"
+    return None, (f"vao {mod} nao tem equivalente na TDT atual da CASCA"
+                  if not do_vao else f"vao {mod_alvo} nao tem {suf}")
+
+
 def resolver(nome: str, sigla: str) -> tuple[str, str, str]:
     """(device_mapping, origem_da_regra, pendencia) — pendencia vazia = ok."""
     cat = catalogo()

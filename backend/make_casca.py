@@ -103,7 +103,15 @@ SIGNAL_ALIAS = date.today().strftime("%d/%m/%Y")
 # e a ambiguidade some, porque esse texto só existe no Cas_Obra.
 # Vale para TODOS: os que já existem (renomear no modelo) e os que ainda serão
 # criados (nascem já com o sufixo). Aba 13 do relatório já lista com o "_2".
-DM_SUFIXO = "_2"
+DM_SUFIXO = ""
+
+# ── SÓ os Device Mappings que existem na TDT atual da CASCA ──────────────────
+# "todos os device mapping necessarios estao aqui. nao existe outros."
+# Com DM_ESTRITO, o Device Mapping sai obrigatoriamente do catalogo de 332
+# valores CAS_* do CASCA.xlsx, e o sinal que nao acha alvo FICA DE FORA da TDT
+# (entra na aba 19 do relatorio). Assim a TDT importa sem nenhum
+# "Could not find any device".
+DM_ESTRITO = True
 
 # Gerar SÓ um vão (--modulo LT2 / --modulo LTPRI). As coordenadas continuam as
 # do sequenciamento GLOBAL — o recorte não renumera nada, só filtra os sinais,
@@ -606,6 +614,11 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
              for m in sorted({x["mod"] for x in dm.get("pendentes", [])
                               if x["pend"].startswith("vao ")})])
 
+    sheet("19-FORA (sem Device Mapping)",
+          ["Aba", "Linha", "Tipo", "SIGLA", "NOME", "Motivo"],
+          list(dm.get("sem_dm", [])),
+          fills=lambda r: warn)
+
     sheet("18-Remote Point Custom ID",
           ["NOME na TDT", "SIGLA", "Aba da lista", "Linha", "Remote Point Custom ID"],
           list(dm.get("rpc", [])))
@@ -842,7 +855,7 @@ def main():
     cont_nome = CONTAINER          # nome da arvore do ADMS, nao o do rascunho
     ambiguos = devmap.ambiguos_no_modelo()
     dm_ambiguo = []; dm_device = 0
-    rpc_rows = []
+    rpc_rows = []; sem_dm = []
     # Ordinal do Remote Point Custom ID calculado sobre a TDT COMPLETA, na
     # mesma ordem em que as linhas sao escritas. Assim o recorte por --modulo
     # mantem os MESMOS ids da TDT inteira e as duas podem conviver no modelo.
@@ -878,6 +891,17 @@ def main():
             if not tpl:
                 pulados.append(p)
                 continue
+            # Device Mapping resolvido ANTES de montar a linha: no modo estrito
+            # o sinal sem alvo no catalogo da CASCA nao entra na TDT.
+            if DM_ESTRITO:
+                dm_base, dm_o = devmap.resolver_estrito(p["nome"], p["sigla"])
+                dm_pend = "" if dm_base else "sem Device Mapping no catalogo"
+                if dm_base is None:
+                    sem_dm.append([p["sheet"], p["linha"], p["tipo"], p["sigla"],
+                                   p["nome"], dm_o])
+                    continue
+            else:
+                dm_base, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
             # NOME final (2ª ocorrência de um nome repetido leva sufixo no device)
             nome = nome_tdt.get((p["sheet"], p["linha"]), p["nome"])
             parts = p["nome"].split("_")           # device REAL, p/ o Device Mapping
@@ -912,8 +936,7 @@ def main():
             # Device Mapping SEMPRE sobrescrito: o molde traz o DM da subestação
             # de ORIGEM (lixo). Aqui vale a regra da PRÓPRIA CASCA, aprendida da
             # TDT atual — ver casca_devmap.py.
-            dm_base, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
-            # o dispositivo do Cas_Obra leva "_2" no ID (ver DM_SUFIXO)
+            # o dispositivo do Cas_Obra leva o sufixo do ID (ver DM_SUFIXO)
             dm = f"{dm_base}{DM_SUFIXO}"
             put("Device Mapping", dm)
             put("Substation", cont_nome)
@@ -993,7 +1016,7 @@ def main():
     fbd = {f["sigla"]: f["desc"] for f in usou_fallback}
     _rel([[sg, mo, n, fbd.get(sg, "")] for (sg, mo), n in sorted(fbc.items(), key=lambda x: -x[1])],
          {"linhas": dm_rows, "origem": dm_origem, "pendentes": dm_pendentes,
-          "ambiguos": dm_ambiguo, "rpc": rpc_rows},
+          "ambiguos": dm_ambiguo, "rpc": rpc_rows, "sem_dm": sem_dm},
          {"realoc": cmd_realoc, "orfaos": cmd_orfaos})
     print(f"relatorio: {OUT_REL.name} ({len(mapa)} coords, {len(dups)} repetidas, "
           f"{len(usou_fallback)} por equivalencia)")

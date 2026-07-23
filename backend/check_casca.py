@@ -217,9 +217,9 @@ def main():
         falha(f"Remote Point Custom ID fora do padrao Cas_obra_id_00000: {fora[:5]}")
     if duprpc:
         falha(f"Remote Point Custom ID repetido: {duprpc[:5]}")
-    nums = sorted(int(r.split("_")[-1]) for r in rpcs if r not in fora)
-    if nums and nums != list(range(nums[0], nums[0] + len(nums))):
-        falha("Remote Point Custom ID com buraco na sequencia")
+    # a numeracao e GLOBAL (calculada sobre a TDT inteira): quando ha recorte
+    # por --modulo ou sinal fora por falta de Device Mapping, ela tem buracos
+    # de proposito. O que importa e ser unica e estar no padrao.
 
     # Signal Alias = data da leva, igual em todos (convencao do usuario)
     alias = collections.Counter(str(x.get("Signal Alias") or "")
@@ -267,6 +267,25 @@ def main():
             faltando.append(p)
     print(f"  sinais SIM na lista: "
           f"{sum(1 for p in pts if p['usado'] and p['tipo'] != 'C' and p['sigla'])}")
+    # no modo estrito, o sinal sem Device Mapping no catalogo da CASCA fica
+    # FORA da TDT de proposito — a aba 19 do relatorio tem que listar cada um
+    fora_ok = set()
+    _rel = D / "CASCA_RELATORIO.xlsx"
+    if _rel.exists():
+        try:
+            _w = openpyxl.load_workbook(_rel, read_only=True, data_only=True)
+            if "19-FORA (sem Device Mapping)" in _w.sheetnames:
+                for _r in _w["19-FORA (sem Device Mapping)"].iter_rows(
+                        min_row=2, values_only=True):
+                    if _r and _r[4]:
+                        fora_ok.add((str(_r[0]), _r[1]))
+            _w.close()
+        except Exception:                                        # noqa: BLE001
+            pass
+    justificados = [p for p in faltando if (p["sheet"], p["linha"]) in fora_ok]
+    faltando = [p for p in faltando if (p["sheet"], p["linha"]) not in fora_ok]
+    print(f"  fora da TDT por nao ter Device Mapping: {len(justificados)} "
+          f"(aba 19 do relatorio)")
     print(f"  ausentes na TDT: {len(faltando)} | coordenada divergente: {len(divergentes)}")
     for p in faltando[:8]:
         falha(f"ausente na TDT: {p['sheet']}!L{p['linha']} {p['nome']}")
@@ -295,7 +314,7 @@ def main():
     for p in pts:
         if p["tipo"] == "C" and p["usado"] and p["sigla"]:
             cmds.setdefault(p["nome"], p)
-    ok = errado = 0
+    ok = errado = pulados_cmd = 0
     por_mod_sigla = {}
     for p in pts:
         if p["usado"] and p["tipo"] == "D":
@@ -316,6 +335,12 @@ def main():
             if sig_nome is None and nome in porsinal:
                 sig_nome = nome
         if sig_nome is None:
+            # se o sinal de status ficou FORA da TDT (sem Device Mapping), o
+            # comando dele sair junto e o esperado
+            _d = alvo or por_mod_sigla.get((nome.split("_")[1], c["sigla"]))
+            if (_d and (_d["sheet"], _d["linha"]) in fora_ok) or                (_d is None and nome not in porsinal):
+                pulados_cmd += 1
+                continue
             errado += 1
             falha(f"comando sem portador na TDT: {nome} ({c['sheet']}!L{c['linha']})")
             continue
@@ -327,7 +352,8 @@ def main():
         else:
             errado += 1
             falha(f"Output de {nome} (em {sig_nome}): TDT={got!r} lista={esperado!r}")
-    print(f"  comandos na lista: {len(cmds)} | corretos: {ok} | problemas: {errado}")
+    print(f"  comandos na lista: {len(cmds)} | corretos: {ok} | "
+          f"fora junto com o status: {pulados_cmd} | problemas: {errado}")
     # o inverso: sinal com Output que nao corresponde a nenhuma linha C
     carregam = set(portador.values())
     sobra = [n for n, x in porsinal.items()
@@ -378,11 +404,14 @@ def main():
 
     print("=== 7) CONTAGEM POR ABA ===")
     esperado = collections.Counter(
-        p["sheet"] for p in pts if p["usado"] and p["tipo"] != "C" and p["sigla"])
+        p["sheet"] for p in pts if p["usado"] and p["tipo"] != "C" and p["sigla"]
+        and (p["sheet"], p["linha"]) not in fora_ok)
     obtido = collections.Counter(
         p["sheet"] for p in pts if casado.get((p["sheet"], p["linha"])))
-    for sn in sorted(esperado):
+    for sn in sorted(set(esperado) | set(obtido)):
         e, o = esperado[sn], obtido[sn]
+        if e == 0 and o == 0:
+            continue
         marca = "ok" if e == o else "<<< DIFERENTE"
         print(f"  {sn:<24} lista={e:>4}  tdt={o:>4}  {marca}")
         if e != o:

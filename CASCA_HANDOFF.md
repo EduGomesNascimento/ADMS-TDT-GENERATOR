@@ -858,3 +858,59 @@ Input coords 15..157        88/88 com dispositivo no modelo, 0 pendente
 São **17 dispositivos** para renomear com `_2` no `Cas_Obra` — depois disso o
 vão inteiro entra limpo. É o teste mais barato para validar a estratégia do
 sufixo antes de fazer em massa.
+
+---
+
+## 19. `DM_ESTRITO` — só os Device Mappings que existem na CASCA
+
+> "é problema de mapeamento. todos os device mapping necessarios estão aqui.
+> não existe outros."
+
+O `CASCA.xlsx` tem **332 Device Mappings `CAS_*`** (os outros ~158 são numéricos,
+dos religadores `RAD_*`, e não servem). Com `DM_ESTRITO = True`:
+
+- o Device Mapping sai **obrigatoriamente** desse catálogo — nada inventado
+- **`DM_SUFIXO` voltou para `""`** (sem `_2`: aquele texto não existe na CASCA)
+- o sinal que não acha alvo **fica de fora da TDT** e vai para a aba
+  **`19-FORA (sem Device Mapping)`**
+
+### Resultado
+
+```
+TDT_CASCA_UTR_CAS_3.xlsx    858 sinais   (705 D + 151 A + 2 A/D)
+                            0 Device Mappings fora do catalogo
+                            101 DMs distintos, todos do CASCA.xlsx
+```
+
+Como cada DM foi escolhido:
+
+| Origem | Sinais |
+|---|---|
+| a TDT atual usa esse DM para (vão, sigla) | 268 |
+| mesmo vão e sufixo, equipamento renumerado | 248 |
+| rebaixado para o disjuntor do vão | 158 |
+| rebaixado para a seccionadora | 112 |
+| barra / TC / trafo / retificador | 67 |
+| exato | 1 |
+
+### Os 424 que ficaram de fora
+
+São os vãos que **não existem na CASCA de hoje** — não há Device Mapping
+possível para eles:
+
+| Vão | Sinais | O que é |
+|---|---|---|
+| `AL18` | 102 | BC 1 + transferência 24-1 |
+| `AL24` `AL25` `AL26` `TRF29` | 55 cada | alimentadores e transf. 24-2 novos |
+| `AL28` | 49 | BC 2 |
+| `IB20` | 34 | interbarras BT |
+| `BP213.8` | 14 | 2ª barra 13,8 kV |
+| `TSA2` | 5 | 2º serviço auxiliar |
+
+Junto saem **71 comandos** desses mesmos sinais. Eles voltam sozinhos assim que
+os dispositivos existirem: é só rodar `make_casca.py` de novo com um
+`CASCA.xlsx` atualizado.
+
+> As coordenadas **não mudam** por causa do recorte — o sequenciamento continua
+> global, sobre os 2535 pontos da lista. A lista corrigida segue valendo
+> inteira, e o que entra na TDT agora é um subconjunto dela.
