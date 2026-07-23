@@ -470,3 +470,81 @@ da TDT original. Sem isso, a aba `13` superestimava o que falta criar.
 4. Relé específico inexistente → relé genérico `_PROT`
 5. Dispositivo inexistente → equivalente do vão (aba `14`)
 6. Vão inexistente → nome canônico (aba `13`)
+
+---
+
+## 12. Terceiro import — 1000 de 1282 sinais mapearam
+
+`eros3.csv`: de 1000+ falhas para **286**. O que sobrou está em
+`CASCA_STATUS_IMPORT.xlsx`, gerado por `backend/casca_status.py`, que cruza o
+retorno do ADMS com a TDT.
+
+> O CSV de erro é a **fonte mais confiável** sobre o modelo: se o sinal mapeou,
+> o dispositivo existe e é único; se falhou, a mensagem diz se está duplicado ou
+> ausente. Rode `python casca_status.py <erros.csv>` a cada import.
+
+| Classe | Sinais | Onde se resolve |
+|---|---|---|
+| **MAPEOU** | **1000** | — |
+| `Found multiple devices` | 201 | **modelo:** ID de Mapeamento SCADA único |
+| `Could not find any device` | 77 | **modelo:** criar o dispositivo |
+| `already has client points` | 4 | decidir (ver 12.3) |
+
+### 12.1 Por vão
+
+| Situação | Vãos |
+|---|---|
+| **completo** | TR7BT, IB20, TSA |
+| quase (≤4 falhas) | AL12, AL24, AL25, AL26, TRF29, LT1, LT2, LT3, TR6, TR7, TR6AT, TR7AT, TR6BT, AL28 |
+| **41 de 52 falhando** | **AL13, AL14, AL15, AL21** |
+| barras | BP69, BP113.8, BP213.8 |
+| serviço auxiliar | TSA1, TSA2 |
+
+### 12.2 A pista mais importante: analógico passa, discreto não
+
+No AL13, com o **mesmo** `CAS_AL13_52-3_DJ`:
+
+```
+OK      CAS_AL13_AL13_IA / IB / IC / P / Q      (analógicos)
+FALHOU  CAS_AL13_52-13_DJF1 / 79 / FA / ...     (discretos)
+```
+
+A ambiguidade só derruba os **discretos**. E repare no contraste:
+
+| Vão | Device Mapping usado | Discretos |
+|---|---|---|
+| AL24 (criado agora) | `CAS_AL24_52-24_DJ` — numeração **nova** | ✅ 21 mapearam |
+| AL12 | `CAS_AL12_52-2_DJ` — numeração **antiga** | ✅ 24 mapearam |
+| AL13/14/15/21 | `CAS_AL13_52-3_DJ` — numeração **antiga** | ❌ 20 falharam |
+
+Ou seja: **os vãos que o César já ajustou no modelo passam**; AL13, AL14, AL15 e
+AL21 ainda têm o ID duplicado entre a CASCA original e o Casca_Obra.
+
+Isso decide uma pergunta que estava em aberto: **qual numeração o dispositivo do
+Casca_Obra deve usar?** O AL24 mostra que os vãos novos usam a numeração **nova**
+(`52-24`). Se AL13/14/15/21 forem criados com `52-13`/`52-14`/`52-15`/`52-21`,
+some a ambiguidade de vez — mas aí a TDT precisa apontar pro nome canônico.
+`MODULO_EQUIV` e a chave `REAPROVEITAR_DISPOSITIVO_ANTIGO` controlam isso.
+
+### 12.3 `already has client points` — 4 sinais
+
+```
+CAS_TR6_TR6_CDC  ->  ja existe CAS_TR1_TR1_CDC em CAS_TR1_COMTAP
+CAS_TR7_TR7_CDC  ->  ja existe CAS_TR2_TR2_CDC em CAS_TR2_COMTAP
+CAS_TR6_TR6_R90  ->  ja existe CAS_TR1_TR1_R90 em RT1
+CAS_TR7_TR7_R90  ->  ja existe CAS_TR2_TR2_R90 em RT2
+```
+
+O dispositivo já tem esse ponto vindo da **UTR antiga (IEC)**. O ADMS não
+sobrescreve. Decidir se o ponto novo entra em outro dispositivo ou se o antigo
+sai quando a UTR velha for desativada.
+
+### 12.4 Como acompanhar
+
+```bash
+python backend/casca_status.py <erros.csv>
+```
+
+`CASCA_STATUS_IMPORT.xlsx`: `1-Resumo`, `2-Por modulo`, `3-Por dispositivo`
+(cada Device Mapping com status e ação), `4-Sinais que falharam` e
+`5-Dispositivos OK` (os que já estão certos — não mexer).
