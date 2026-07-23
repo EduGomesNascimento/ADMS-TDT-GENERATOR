@@ -93,6 +93,17 @@ RPC_PREFIXO = "Cas_obra_id_"
 # Convenção do usuário para marcar a importação. A descrição do ponto passa a
 # ir na coluna Description.
 SIGNAL_ALIAS = date.today().strftime("%d/%m/%Y")
+
+# ── Sufixo do Device Mapping ─────────────────────────────────────────────────
+# O Cas_Obra é cópia integral da CASCA e herdou TODOS os IDs de Mapeamento
+# SCADA, então cada ID responde por dois dispositivos e o ADMS recusa:
+#   "Found multiple devices that correspond to Device Mapping: ..."
+# Solução combinada: os dispositivos da cópia recebem "_2" no ID. A TDT passa a
+# apontar para o ID com sufixo — CAS_AL13_52-3_DJ vira CAS_AL13_52-3_DJ_2 —
+# e a ambiguidade some, porque esse texto só existe no Cas_Obra.
+# Vale para TODOS: os que já existem (renomear no modelo) e os que ainda serão
+# criados (nascem já com o sufixo). Aba 13 do relatório já lista com o "_2".
+DM_SUFIXO = "_2"
 HEADER_ROWS = 4
 SKIP_SHEETS = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
 
@@ -373,8 +384,9 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     alta = [a for a in avisos if a[0] == "ALTA"]
     _val = devmap.catalogo()["validos"]
     _linhas = (dm or {}).get("linhas", [])
-    n_ok = sum(1 for r in _linhas if r[5] in _val)
-    n_reb = sum(1 for r in _linhas if r[5] in _val and r[7] != "ok")
+    _base = lambda v: str(v)[:-len(DM_SUFIXO)] if DM_SUFIXO and str(v).endswith(DM_SUFIXO) else str(v)
+    n_ok = sum(1 for r in _linhas if _base(r[5]) in _val)
+    n_reb = sum(1 for r in _linhas if _base(r[5]) in _val and r[7] != "ok")
     n_pend = len(_linhas) - n_ok
     sheet("0-LEIA-ME",
           ["O PROBLEMA E A SOLUCAO"],
@@ -553,7 +565,7 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     # o que precisa ser CRIADO no Casca_Obra para os sinais mapearem
     falta = OrderedDict()
     for x in dm.get("pendentes", []):
-        if not x["pend"].startswith(("MODULO", "criar ")):
+        if not x["pend"].startswith(("MODULO", "criar ", "vao ")):
             continue
         d = falta.setdefault(x["dm"], {"n": 0, "mod": x["mod"], "dev": x["dev"],
                                        "ex": []})
@@ -599,7 +611,7 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
           ["NOME na TDT", "SIGLA", "Device Mapping usado", "Motivo"],
           [[x["nome"], x["sigla"], x["dm"], x["pend"]]
            for x in dm.get("pendentes", [])
-           if not x["pend"].startswith(("MODULO", "criar "))])
+           if not x["pend"].startswith(("MODULO", "criar ", "vao "))])
     sheet("11-DM origem (resumo)",
           ["Origem", "Qtde", "O que significa"],
           [[o, n, {"TDT atual": "sigla existe na TDT atual da CASCA — regra copiada",
@@ -879,19 +891,18 @@ def main():
             # Device Mapping SEMPRE sobrescrito: o molde traz o DM da subestação
             # de ORIGEM (lixo). Aqui vale a regra da PRÓPRIA CASCA, aprendida da
             # TDT atual — ver casca_devmap.py.
-            dm, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
+            dm_base, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
+            # o dispositivo do Cas_Obra leva "_2" no ID (ver DM_SUFIXO)
+            dm = f"{dm_base}{DM_SUFIXO}"
             put("Device Mapping", dm)
-            # Substation + Device apertam a busca: o Casca_Obra e copia da
-            # CASCA e herdou os mesmos IDs de Mapeamento SCADA, entao so o ID
-            # nao basta pros sinais discretos.
             put("Substation", cont_nome)
-            nd = devmap.nome_do_dispositivo(dm)
+            nd = devmap.nome_do_dispositivo(dm_base)
             if nd:
                 put("Device", nd)
                 dm_device += 1
-            if dm in ambiguos:
+            if dm_base in ambiguos:
                 dm_ambiguo.append([nome, p["sigla"], dm,
-                                   ", ".join(f"{t} {n}" for t, n in ambiguos[dm])])
+                                   ", ".join(f"{t} {n}" for t, n in ambiguos[dm_base])])
             dm_origem[dm_o] += 1
             dm_rows.append([p["sheet"], p["linha"], p["tipo"], p["sigla"], nome, dm,
                             dm_o, dm_pend or "ok"])
@@ -966,8 +977,9 @@ def main():
     print(f"relatorio: {OUT_REL.name} ({len(mapa)} coords, {len(dups)} repetidas, "
           f"{len(usou_fallback)} por equivalencia)")
     _val = devmap.catalogo()["validos"]
-    _ok = sum(1 for r in dm_rows if r[5] in _val)
-    _reb = sum(1 for r in dm_rows if r[5] in _val and r[7] != "ok")
+    _b = lambda v: str(v)[:-len(DM_SUFIXO)] if DM_SUFIXO and str(v).endswith(DM_SUFIXO) else str(v)
+    _ok = sum(1 for r in dm_rows if _b(r[5]) in _val)
+    _reb = sum(1 for r in dm_rows if _b(r[5]) in _val and r[7] != "ok")
     print(f"device mapping: {len(dm_rows)} sinais | mapeiam no unifilar: {_ok} "
           f"({_reb} com dispositivo rebaixado) | sem dispositivo: {len(dm_rows) - _ok}")
     print(f"coluna Device preenchida com o nome do dispositivo: {dm_device} sinais")

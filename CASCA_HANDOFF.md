@@ -775,3 +775,46 @@ duas colunas preenchidas.
 (`date.today()`, formato `dd/mm/aaaa`). O `check_casca.py` confere que o alias
 é uniforme, está no formato certo, e que a `Description` bate com a descrição
 da lista de pontos.
+
+---
+
+## 17. Device Mapping com sufixo `_2`
+
+Decisão para matar a ambiguidade de vez: **os dispositivos do `Cas_Obra`
+recebem `_2` no ID de Mapeamento SCADA**, e a TDT aponta para o ID com sufixo.
+
+```
+CAS_AL13_52-3_DJ        ->  CAS_AL13_52-3_DJ_2
+CAS_LTSCO_52-20_DJ      ->  CAS_LTSCO_52-20_DJ_2
+CAS_AL24_52-24_DJ       ->  CAS_AL24_52-24_DJ_2
+```
+
+Funciona porque esse texto **só existe no `Cas_Obra`** — a `CASCA` original
+continua com o ID sem sufixo, e o "Found multiple devices" deixa de acontecer.
+
+- **1282 sinais, 100% com `_2`**, em **310 Device Mappings distintos**
+- vale para todos: os que já existem no modelo (**renomear**) e os que ainda
+  serão criados (**nascem com o sufixo**)
+- constante `DM_SUFIXO` em `backend/make_casca.py` — pôr `""` volta ao anterior
+
+### O que o César precisa fazer no modelo
+
+A aba **`13-CRIAR no Casca_Obra`** já lista tudo com o `_2` no nome. E a aba
+`3-Por dispositivo` do `CASCA_STATUS_IMPORT.xlsx`, cruzada com o próximo
+`erros.csv`, mostra o que sobrou.
+
+| Ação | Dispositivos |
+|---|---|
+| **Renomear** o ID para terminar em `_2` | os que hoje dão "Found multiple" |
+| **Criar** já com `_2` | 185 da aba 13 |
+
+Os 10 maiores por impacto:
+
+```
+CAS_LTSCO_52-20_DJ_2      53 sinais      CAS_TR1AT_89-12_SEC_2     35
+CAS_LTPRI_52-21_DJ_2      41             CAS_TR1_TR1_TR_2          29
+CAS_TR2AT_89-16_SEC_2     38             CAS_AL24_52-24_DJ_2       22
+CAS_LTMRU_LTMRU_DJ_2      37             CAS_AL25_52-25_DJ_2       22
+                                         CAS_AL26_52-26_DJ_2       22
+                                         CAS_TRF29_24-2_DJ_2       22
+```
