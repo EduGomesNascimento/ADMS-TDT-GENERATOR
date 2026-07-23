@@ -436,8 +436,11 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            ["- TDT_CASCA_UTR_CAS_3.xlsx ....... a TDT ja com as coordenadas novas"],
            ["- RGE ADMS_Lista Pontos Casca_CORRIGIDA.xlsx ... a lista com a coluna"],
            ["  INDEX DNP3 ja arrumada (mesma estrutura da original)"],
+           ["- CASCA_STATUS_IMPORT.xlsx ....... o que o ADMS aceitou/recusou"],
+           ["  (gerado por backend/casca_status.py a partir do CSV de erro)"],
            ["- Aba 2 deste relatorio .......... de-para completo (antes -> depois)"],
            ["- Aba 3 .......................... evidencia das coordenadas repetidas"],
+           ["- Abas 10 a 19 ................... tudo sobre Device Mapping"],
            [""],
            ["SEM PONTAS SOLTAS"],
            ["TODA linha de sinal recebe coordenada — inclusive as marcadas"],
@@ -462,38 +465,47 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            ["Corrigir na planilha de origem muda NOME e Device Mapping — melhor"],
            ["acertar antes de criar os dispositivos no Casca_Obra."],
            [""],
-           ["DEVICE MAPPING — conferido contra o MODELO"],
-           ["Fonte da verdade: PT-MOD-SE-CASCA.xml (changeset do Casca_Obra)."],
-           ["Cada dispositivo de la tem um 'ID de Mapeamento SCADA'; a coluna"],
-           ["Device Mapping da TDT precisa conter EXATAMENTE esse texto, senao o"],
-           ["ADMS responde 'Could not find any device that corresponds to...'."],
+           ["DEVICE MAPPING — SO O QUE EXISTE NA TDT ATUAL DA CASCA"],
+           ["Regra: 'todos os device mapping necessarios estao no CASCA.xlsx,"],
+           ["nao existe outros'. O catalogo tem 332 valores CAS_* (os ~158"],
+           ["numericos sao dos religadores RAD_* e nao servem). NADA e inventado:"],
+           ["todo Device Mapping da TDT sai dessa lista, ou vai para a UTR."],
            [""],
-           ["REGRA DO PROJETO: a LISTA manda nos SINAIS, o UNIFILAR manda nos"],
-           ["DISPOSITIVOS ('o que esta no campo real e o que esta no ADMS')."],
+           ["POR QUE ISSO IMPORTA: o Cas_Obra e COPIA da CASCA e herdou os mesmos"],
+           ["IDs de Mapeamento SCADA. Texto que nao existe la = 'Could not find"],
+           ["any device'; texto inventado nao resolve nada."],
            [""],
+           ["A LISTA manda nos SINAIS, o UNIFILAR manda nos DISPOSITIVOS."],
            ["A lista renumerou tudo em relacao ao unifilar:"],
            ["  UNIFILAR: BARRA P1/P2 138kV · BARRA P3/T1 23kV · TR1 15/20/25 e"],
            ["            TR2 10/12,5 MVA · LT KVM/PRI/SCO · AL12..AL15 AL21 · TSA-3"],
            ["  LISTA   : LT 69kV (LT1 LT2 LT3) · TR 69/13,8kV (TR6 TR7) · BP69 ·"],
            ["            BP1/BP2 13.8 · AL12..AL15 AL21 AL24 AL25 AL26 · BC1 BC2 ·"],
            ["            interbarras 20 · transf. 24-1 e 24-2 · TSA1 TSA2"],
-           ["Ate os vaos que mantem o nome mudaram de numero"],
-           ["(AL12: 52-12/29-48/29-50/29-52 na lista = 52-02/29-06/29-08/29-10"],
-           ["no unifilar)."],
+           ["Ate os vaos que mantem o nome mudaram de numero (o AL12 e"],
+           ["52-12/29-48/29-50/29-52 na lista e 52-02/29-06/29-08/29-10 no"],
+           ["unifilar). Por isso existe a tabela de equivalencia de vaos."],
            [""],
-           ["ENTAO O DEVICE MAPPING SEGUE O UNIFILAR. Ordem de resolucao:"],
-           ["  1) texto identico a um ID de Mapeamento SCADA do modelo"],
-           ["  2) equivalencia de vao (LT1->LT SCO, TR6->TR1...) — ABA 16"],
-           ["  3) mesmo vao, equipamento renumerado (52-12 -> 52-2)"],
+           ["ORDEM DE RESOLUCAO (backend/casca_devmap.resolver_estrito)"],
+           ["  1) o DM que a TDT atual ja usa para (vao, sigla)"],
+           ["  2) equivalencia de vao: LT1->LTSCO, LT2->LTPRI, LT3->LTMRU,"],
+           ["     TR6->TR1, TR7->TR2, BP69->B138, BP113.8->BP23, TSA1->TSA3"],
+           ["     — ABA 16, com a evidencia e a confianca de cada uma"],
+           ["  3) mesmo vao e mesmo sufixo, equipamento renumerado"],
            ["  4) rele especifico inexistente -> rele generico _PROT do vao"],
-           ["  5) dispositivo inexistente -> o equivalente do vao (o TR1 entra"],
-           ["     por seccionadora 89-12, nao tem disjuntor AT) — ABA 14"],
-           ["  6) vao que NAO existe no unifilar -> nome canonico + ABA 13"],
+           ["  5) rebaixamento por tipo (o TR1 entra por seccionadora 89-12,"],
+           ["     nao tem disjuntor AT) — ABA 14"],
+           ["  6) sem alvo nenhum -> Device Mapping = UTR_CAS_3 — ABA 19"],
            [""],
-           ["A EQUIVALENCIA DE VAOS ESTA NA ABA 16, com a evidencia e o grau de"],
-           ["confianca de cada uma. Se alguma estiver errada, e so corrigir a"],
-           ["tabela MODULO_EQUIV em backend/casca_devmap.py e rodar de novo —"],
-           ["esta tudo num lugar so."],
+           ["O QUE FICOU NA UTR (ABA 19)"],
+           ["Sinal sem dispositivo NAO fica de fora: entra pendurado na propria"],
+           ["UTR. Sao os vaos que a CASCA de hoje nao tem — AL18 (BC 1 e a"],
+           ["transferencia 24-1), AL24, AL25, AL26, TRF29 (24-2), AL28 (BC 2),"],
+           ["IB20, BP213.8 e TSA2. Quando o dispositivo existir, e so remapear"],
+           ["esses sinais; nao precisa reimportar o resto."],
+           [""],
+           ["SE UMA EQUIVALENCIA ESTIVER ERRADA: corrija a tabela MODULO_EQUIV em"],
+           ["backend/casca_devmap.py e rode de novo. Esta tudo num lugar so."],
            [""],
            ["A LISTA CORRIGIDA ABRE SEM REPARO"],
            ["As formulas foram congeladas no valor calculado e o vinculo externo"],
@@ -502,6 +514,101 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            [""],
            ["ATENCAO: as coordenadas tem que bater com o que for configurado na UTR"],
            ["ELIPSE. Use a lista CORRIGIDA como referencia para parametrizar a UTR."]])
+
+
+    # ── historico de TODOS os erros do caminho ate aqui ──────────────────────
+    HIST = [
+        ["1", "Excel/ADMS", "Invalid TDI file format",
+         "O .xlsx gravado pelo openpyxl nao e aceito: o ADMS so le o OOXML que "
+         "o proprio Excel escreve.",
+         "Regravar o arquivo pelo Excel via COM (backend/excel_native.py, "
+         "pywin32 DispatchEx, FileFormat=51). Vale para TODA TDT.",
+         "RESOLVIDO"],
+        ["2", "Validador", "does not have unique input coordinates",
+         "A lista de pontos tinha 704 ocorrencias de INDEX DNP3 repetido (duas "
+         "cadeias de alocacao se sobrepondo) e 1145 pontos com #REF!.",
+         "Re-sequenciamento continuo: coordenadas redistribuidas em ordem, sem "
+         "buraco e sem repeticao, preservando o arranjo original. Abas 2 e 3.",
+         "RESOLVIDO"],
+        ["3", "Excel", "Excel pede REPARO ao abrir a lista corrigida",
+         "A lista original tem vinculo externo (xl/externalLinks); o openpyxl "
+         "reescrevia essa parte sem o cache de valores.",
+         "Congelar toda formula no valor calculado, remover os vinculos "
+         "externos e os nomes definidos que apontam pra fora.",
+         "RESOLVIDO"],
+        ["4", "Import", "Element: of type: Discrete Signal will not be imported "
+         "... parent element ... was not imported  (2711 registros)",
+         "Cascata de UM erro so: 'Mandatory reference Casca_Obra not found in "
+         "model' na aba DNP3_RTUs. Sem a RTU, nenhum sinal dela entra.",
+         "A aba DNP3_RTUs referenciava o container so pelo NOME. Passou a levar "
+         "tambem o Container Custom ID lido do XML do modelo.",
+         "RESOLVIDO"],
+        ["5", "Import", "Found one TCP/IP Link with the same name "
+         "UTR_LVA_2_Link1__SAT Hughes in model. It will be updated",
+         "A aba DNP3_TCPLinks vinha do esqueleto da LVA. Importar a CASCA "
+         "teria ALTERADO o link da UTR da Lagoa Vermelha.",
+         "DNP3_TCPLinks / UDPLinks / ScanGroups sao esvaziadas. A lista da "
+         "CASCA nao traz IP nem Address, entao o link fica pro time de "
+         "comunicacao.",
+         "RESOLVIDO"],
+        ["6", "Device Mapping", "Could not find any device ... IMA_BP213.8_"
+         "BP213.8_DJ",
+         "4 linhas da lista saiam com o alias de OUTRA subestacao (IMA) porque "
+         "a coluna SUBESTACAO ficou errada: BARRA L51/L52 e RET 1 L14/L15.",
+         "O gerador normaliza o alias para CAS. Registrado na aba 15 — vale "
+         "corrigir a celula na planilha de origem.",
+         "RESOLVIDO"],
+        ["7", "Device Mapping", "Could not find any device that corresponds to "
+         "Device Mapping (nomes canonicos)",
+         "Eu montava o Device Mapping pela CONVENCAO, sem conferir se o "
+         "dispositivo existe.",
+         "Passou a sair SO do catalogo de 332 IDs CAS_* do CASCA.xlsx. Nada e "
+         "inventado. Abas 10, 11 e 16.",
+         "RESOLVIDO"],
+        ["8", "Modelo", "Signal Alias / descricao se perdendo",
+         "O Signal Alias passou a ser a data da leva, e a descricao do ponto "
+         "ocupava esse campo.",
+         "Descricao movida para a coluna Description; Signal Alias = data de "
+         "hoje, igual em todos os sinais.",
+         "RESOLVIDO"],
+        ["9", "Import", "Found same signal CAS_TR1_TR1_CDC on device "
+         "CAS_TR1_COMTAP but it already has client points",
+         "CDC e R90 do TR6/TR7: o dispositivo ja tem esse ponto vindo da UTR "
+         "IEC antiga, e o ADMS nao sobrescreve.",
+         "Decisao do time: o ponto novo vai pra outro dispositivo ou espera a "
+         "UTR velha sair. Sao 4 sinais.",
+         "EM ABERTO"],
+        ["10", "Import", "Found multiple devices that correspond to Device "
+         "Mapping: CAS_LTSCO_52-20_DJ / CAS_LTSCO_LTSCO_TC / ...",
+         "O Cas_Obra e COPIA da CASCA e herdou TODOS os IDs de Mapeamento "
+         "SCADA. Cada ID responde por DOIS dispositivos — um em cada "
+         "subestacao — e o ADMS se recusa a escolher. Nao e erro da TDT.",
+         "TENTADO E SEM EFEITO: preencher Substation=Cas_Obra e a coluna "
+         "Device (o ADMS resolve o DM globalmente e ignora as duas). "
+         "SO RESOLVE NO MODELO: dar um ID de Mapeamento SCADA proprio a cada "
+         "dispositivo do Cas_Obra. Aba 17 lista os afetados.",
+         "EM ABERTO — E O ERRO DA FOTO"],
+        ["11", "Diagnostico", "1282 de 1282 sinais falharam de uma vez",
+         "Ao trocar o Remote Point Custom ID para o ordinal Cas_obra_id_00001, "
+         "todo sinal virou NOVO e o Device Mapping foi re-resolvido do zero. "
+         "Os ~1000 que 'mapeavam' antes estavam vinculados desde uma "
+         "importacao anterior, nao eram resolvidos a cada import.",
+         "Nao e regressao: e a fotografia real. Mostrou que a ambiguidade "
+         "atinge TODOS os dispositivos, nao 42 como parecia.",
+         "ESCLARECIDO"],
+        ["12", "Modelo", "vao sem nenhum dispositivo no Cas_Obra",
+         "AL18 (BC 1 e transferencia 24-1), AL24, AL25, AL26, TRF29, AL28 "
+         "(BC 2), IB20, BP213.8 e TSA2 nao existem na CASCA de hoje.",
+         "Os 424 sinais entram na TDT com Device Mapping = UTR_CAS_3, "
+         "pendurados na propria UTR. Quando o dispositivo existir, e so "
+         "remapear. Abas 19 (sinais) e 13 (dispositivos a criar).",
+         "CONTORNADO"],
+    ]
+    sheet("20-Historico de erros",
+          ["#", "Onde", "Mensagem do ADMS / sintoma", "Causa", "Resolucao",
+           "Situacao"],
+          HIST,
+          fills=lambda r: (warn if str(r[5]).startswith("EM ABERTO") else None))
 
     sheet("1-Resumo",
           ["Item", "Qtde", "Observação"],
@@ -517,9 +624,10 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            ["NOMES duplicados (renomeados)", len(renomeados), "ver aba 6 — todos na TDT"],
            ["Index antigo limpo (nao utilizado)", len(limpos), "ver aba 9"],
            ["AVISOS p/ o modelo (severidade ALTA)", len(alta), "ver aba 15"],
-           ["Sinais que MAPEIAM no unifilar", n_ok, "Device Mapping ja existe no modelo"],
-           ["  .. com dispositivo rebaixado", n_reb, "ver aba 14 — mapeia, mas confira"],
-           ["Sinais SEM dispositivo no unifilar", n_pend, "ver aba 13 — criar no Casca_Obra"],
+           ["Sinais em dispositivo real", n_ok, "Device Mapping vindo do CASCA.xlsx"],
+           ["  .. em dispositivo rebaixado", n_reb, "ver aba 14 — mapeia, mas confira"],
+           ["Sinais mapeados na UTR (sem dispositivo)", len((dm or {}).get("sem_dm", [])),
+            "ver aba 19; dispositivos a criar na aba 13"],
            ["Equivalencia de vaos aplicada", len(devmap.MODULO_EQUIV), "ver aba 16"],
            ["UTR", RU, f"nova, DNP3, {FABRICANTE}, AOR {AOR}"],
            ["Container da RTU", CONTAINER, "informado pelo usuario"]])
@@ -583,16 +691,19 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
            "Origem da regra", "Situacao no modelo"],
           dm["linhas"])
 
-    # o que precisa ser CRIADO no Casca_Obra para os sinais mapearem
+    # o que precisa ser CRIADO no Cas_Obra: derivado dos sinais que foram
+    # parar na UTR por nao existir dispositivo (aba 19)
     falta = OrderedDict()
-    for x in dm.get("pendentes", []):
-        if not x["pend"].startswith(("MODULO", "criar ", "vao ")):
-            continue
-        d = falta.setdefault(x["dm"], {"n": 0, "mod": x["mod"], "dev": x["dev"],
-                                       "ex": []})
+    for r in dm.get("sem_dm", []):
+        nome = str(r[4]); pp = nome.split("_")
+        mod = pp[1] if len(pp) > 1 else ""
+        dev = pp[2] if len(pp) > 2 else mod
+        suf, _o = devmap.sufixo(str(r[3]), dev)
+        chave = f"{pp[0]}_{mod}_{dev}_{suf}"
+        d = falta.setdefault(chave, {"n": 0, "mod": mod, "dev": dev, "ex": []})
         d["n"] += 1
         if len(d["ex"]) < 3:
-            d["ex"].append(x["nome"])
+            d["ex"].append(nome)
     tipo_disp = {"DJ": "Disjuntor (BREAKER)", "SEC": "Seccionadora (DISCONNECTOR)",
                  "TC": "Transformador de corrente (CURRENTTR)",
                  "TP": "Transformador de potencial (POTENTIALTR)",
@@ -636,8 +747,7 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     sheet("14-DM rebaixado",
           ["NOME na TDT", "SIGLA", "Device Mapping usado", "Motivo"],
           [[x["nome"], x["sigla"], x["dm"], x["pend"]]
-           for x in dm.get("pendentes", [])
-           if not x["pend"].startswith(("MODULO", "criar ", "vao "))])
+           for x in dm.get("pendentes", []) if x["pend"]])
     sheet("11-DM origem (resumo)",
           ["Origem", "Qtde", "O que significa"],
           [[o, n, {"TDT atual": "sigla existe na TDT atual da CASCA — regra copiada",
@@ -901,7 +1011,10 @@ def main():
             # o sinal sem alvo no catalogo da CASCA nao entra na TDT.
             if DM_ESTRITO:
                 dm_base, dm_o = devmap.resolver_estrito(p["nome"], p["sigla"])
-                dm_pend = "" if dm_base else "sem Device Mapping no catalogo"
+                # rebaixado = nao caiu no dispositivo ideal do sinal
+                dm_pend = (dm_o if any(k in dm_o for k in
+                                       ("fallback", "rele generico", "renumerado"))
+                           else "")
                 if dm_base is None:
                     sem_dm.append([p["sheet"], p["linha"], p["tipo"], p["sigla"],
                                    p["nome"], dm_o])
