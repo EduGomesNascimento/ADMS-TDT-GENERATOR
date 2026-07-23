@@ -20,7 +20,7 @@ LISTA = D / "RGE ADMS_Lista Pontos Casca_CORRIGIDA.xlsx"
 TDT = D / "TDT_CASCA_UTR_CAS_3.xlsx"
 SKIP = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
 HR = 4
-RU, AOR, CONT = "UTR_CAS_3", "CAS Trans", "Casca_Obra"
+RU, AOR, CONT = "UTR_CAS_3", "CAS Trans", "Cas_Obra"
 ALIAS = "CAS"
 
 

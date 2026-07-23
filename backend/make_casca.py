@@ -63,7 +63,14 @@ RU = "UTR_CAS_3"
 AOR = "CAS Trans"
 ALIAS = "CAS"                   # sigla da SE (aba Informações da lista)
 FABRICANTE = "ELIPSE"
-CONTAINER = "Casca_Obra"        # container da RTU nova (informado pelo usuário)
+# Nome da SUBESTAÇÃO no modelo, como aparece na árvore do ADMS:
+#   Planalto > Cas_Obra (Substation) > UTR_CAS_3
+# O XML do changeset traz "Casca_Obra" no IDOBJ_NAME — é o rascunho, e não é o
+# que o modelo aplicado usa. Isso passou despercebido porque a RTU resolveu o
+# container pelo Custom ID, não pelo nome. Mas a coluna Substation dos SINAIS
+# só tem o nome: com o nome errado o ADMS não conseguia restringir a busca e a
+# ambiguidade CASCA x Cas_Obra continuava derrubando os discretos.
+CONTAINER = "Cas_Obra"
 HEADER_ROWS = 4
 SKIP_SHEETS = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
 
@@ -785,7 +792,8 @@ def main():
     # "ID de Mapeamento SCADA" dos originais, então o ADMS acha DOIS candidatos
     # e responde "Found multiple devices that correspond to Device Mapping".
     # A coluna Substation existe pra isso: restringe a busca a uma subestação.
-    cont_nome, cont_cid = devmap.container_da_subestacao()
+    _, cont_cid = devmap.container_da_subestacao()
+    cont_nome = CONTAINER          # nome da arvore do ADMS, nao o do rascunho
     ambiguos = devmap.ambiguos_no_modelo()
     dm_ambiguo = []; dm_device = 0
     for sheet, tipo in plano:

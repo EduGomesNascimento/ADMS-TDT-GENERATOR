@@ -583,3 +583,29 @@ busca muito mais que o ID sozinho.
 Se mesmo com `Substation` + `Device` a ambiguidade persistir, aí não há mais o
 que fazer pela TDT: cada dispositivo do `Casca_Obra` precisa de um ID de
 Mapeamento SCADA próprio.
+
+### 12.6 O nome da subestação estava errado
+
+A árvore do ADMS mostra:
+
+```
+Planalto
+ ├─ ARATIBA
+ ├─ ARVOREZINHA
+ ├─ Cas_Obra  (Substation)        <-- aqui
+ │   └─ UTR_CAS_3
+ └─ CASCA
+```
+
+A subestação chama **`Cas_Obra`**. O XML do changeset traz `Casca_Obra` no
+`IDOBJ_NAME` — é o **rascunho**, não o que o modelo aplicado usa.
+
+Isso passou despercebido porque a **RTU resolve o container pelo Custom ID**, e o
+Custom ID estava certo — o container entrou mesmo com o nome errado. Mas a coluna
+`Substation` dos **sinais** só tem o nome: com `Casca_Obra` o ADMS não conseguia
+restringir a busca, e a ambiguidade `CASCA` × `Cas_Obra` continuava derrubando os
+discretos.
+
+Agora `CONTAINER = "Cas_Obra"` em `make_casca.py` alimenta os dois campos, e o
+`check_casca.py` confere. **Lição:** o nome do modelo aplicado vem da árvore do
+ADMS, não do XML do rascunho.
