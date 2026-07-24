@@ -414,6 +414,76 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     n_ok = sum(1 for r in _linhas if _base(r[5]) in _val)
     n_reb = sum(1 for r in _linhas if _base(r[5]) in _val and r[7] != "ok")
     n_pend = len(_linhas) - n_ok
+
+    # ── reconciliacao com o modelo JA renomeado (para a aba de pendencias) ──
+    modelo_ok, modelo_dup = devmap.modelo_new()
+    precisa_dm = Counter(str(r[5]) for r in _linhas if str(r[5]) != RU)
+    falta_dm = OrderedDict((k, v) for k, v in sorted(precisa_dm.items())
+                           if modelo_ok and k not in modelo_ok and k not in modelo_dup)
+    n_utr = sum(1 for r in _linhas if str(r[5]) == RU)
+    falta_por_vao = Counter()
+    for k, v in falta_dm.items():
+        falta_por_vao[k.split("_")[1]] += v
+
+    # ── PRIMEIRA ABA: o que falta corrigir ──────────────────────────────────
+    P = [["ESTA TDT ESTA PRONTA PARA IMPORTAR. O que falta e no MODELO do ADMS."],
+         [""],
+         ["JA FUNCIONA (nao mexer)"],
+         [f"  - {len(_linhas)} sinais na TDT, coordenadas todas unicas e conferidas"],
+         [f"  - {n_ok - n_reb} sinais em dispositivo exato do CASCA.xlsx (com _NEW)"],
+         [f"  - Container Cas_Obra + Custom ID, Remote Point Custom ID ordinal,"],
+         ["    Signal Alias = data da leva, descricao na coluna Description"],
+         [""],
+         ["=================  O QUE FALTA CORRIGIR NO MODELO  ================="],
+         [""],
+         ["1) RENOMEAR/CRIAR dispositivos com _NEW  (aba 21) — "
+          f"{sum(falta_dm.values())} sinais em {len(falta_dm)} dispositivos"],
+         ["   Voce renomeou os alimentadores e LTSCO/LTPRI; faltou:"]]
+    _nome_vao = {"LTMRU": "LT KVM (a LT da ponta)", "TR1": "Trafo 1 (corpo)",
+                 "TR2": "Trafo 2 (corpo)", "TR1AT": "TR1 lado AT",
+                 "TR1BT": "TR1 lado BT", "TR2AT": "TR2 lado AT",
+                 "TR2BT": "TR2 lado BT", "B138": "Barra 138 kV",
+                 "BP23": "Barra 23 kV", "TSA3": "Servico auxiliar"}
+    for vao, n in sorted(falta_por_vao.items(), key=lambda x: -x[1]):
+        P.append([f"     {n:>4} sinais   vao {vao:<7} {_nome_vao.get(vao, '')}"])
+    P += [[""],
+          ["2) DESDUPLICAR IDs que estao em 2 equipamentos  (aba 22) — "
+           f"{sum(precisa_dm.get(k, 0) for k in modelo_dup)} sinais"],
+          ["   O mesmo _NEW foi posto em dois equipamentos. Dar ID proprio ao 2o:"]]
+    for k in sorted(modelo_dup):
+        P.append([f"     {precisa_dm.get(k, 0):>4} sinais   {k}"])
+    P += [["   (o 52-22 voce ja corrigiu para CAS_LTPRI_52-22_DJ_NEW — falta o resto)"],
+          [""],
+          ["3) SINAIS PENDURADOS NA UTR  (aba 19) — "
+           f"{n_utr} sinais"],
+          ["   Dois motivos, os dois OK por enquanto:"],
+          ["   a) vaos que a CASCA de hoje NAO tem: AL18 (BC1 e transf. 24-1),"],
+          ["      AL24, AL25, AL26, TRF29 (24-2), AL28 (BC2), IB20, BP213.8, TSA2."],
+          ["   b) sinais cujo rele especifico nao existe no modelo (DM_SO_EXATO"],
+          ["      esta LIGADO: em vez de empilhar no disjuntor do vao — o que dava"],
+          ["      'already mapped' — ficam na UTR). Se preferir empilhar no"],
+          ["      disjuntor, desligue DM_SO_EXATO em backend/make_casca.py."],
+          ["   Nos dois casos: quando o dispositivo existir, e so remapear."],
+          [""],
+          ["4) CDC / R90 do TR6 e TR7  (erro 9, aba 20) — 4 sinais"],
+          ["   O ponto ja existe no dispositivo vindo da UTR IEC antiga. Decidir"],
+          ["   se o novo entra em outro dispositivo ou espera a UTR velha sair."],
+          [""],
+          ["=================  COMO CONTINUAR SEMANA QUE VEM  ================="],
+          ["  a) No ADMS: renomear os dispositivos da aba 21 com _NEW e dar ID"],
+          ["     distinto aos da aba 22."],
+          ["  b) Exportar o modelo de novo por cima de PT-MOD-SE-CAS.xml."],
+          ["  c) python backend/make_casca.py   (regera a TDT e este relatorio)"],
+          ["  d) Importar; salvar o erros.csv; python backend/casca_status.py erros.csv"],
+          ["  e) O que sobrar sera so a UTR (item 3) e os 4 do item 4."],
+          [""],
+          ["Detalhe de cada ponto nas abas: 21 (falta _NEW), 22 (duplicado),"],
+          ["19 (na UTR), 20 (historico de TODOS os erros e resolucoes),"],
+          ["10 (Device Mapping sinal a sinal), 2 (de-para de coordenadas)."]]
+    sheet("0-O QUE FALTA", ["SE CASCA / UTR_CAS_3 — situacao e pendencias"], P,
+          fills=lambda r: (warn if r and str(r[0]).strip()[:2] in
+                           ("1)", "2)", "3)", "4)") else None))
+
     sheet("0-LEIA-ME",
           ["O PROBLEMA E A SOLUCAO"],
           [["PROBLEMA ENCONTRADO NA LISTA DE PONTOS"],

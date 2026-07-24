@@ -15,17 +15,27 @@ DOWN = Path("C:/Users/egnpo/Downloads")
 RAIZ = Path(__file__).resolve().parent.parent
 OUT = DOWN / "CASCA_UTR_CAS_3_PACOTE.zip"
 
-# (caminho, pasta no zip, obrigatório?)
+# Se a TDT/lista estava aberta no Excel na geracao, a versao atual e a _NOVA.
+# Empacota sempre a MAIS RECENTE das duas, com o nome final.
+def _atual(base: str):
+    o = DOWN / f"{base}.xlsx"; n = DOWN / f"{base}_NOVA.xlsx"
+    if n.exists() and (not o.exists() or n.stat().st_mtime > o.stat().st_mtime):
+        return n, f"{base}.xlsx"          # (arquivo real, nome no zip)
+    return o, None
+
+
+# (caminho, pasta no zip, obrigatório?[, nome no zip])
 ITENS = [
     # ── o que se entrega ──
-    (DOWN / "TDT_CASCA_UTR_CAS_3.xlsx",                      "1-ENTREGA", True),
-    (DOWN / "RGE ADMS_Lista Pontos Casca_CORRIGIDA.xlsx",     "1-ENTREGA", False),
-    (DOWN / "RGE ADMS_Lista Pontos Casca_CORRIGIDA_NOVA.xlsx", "1-ENTREGA", False),
+    (*_atual("TDT_CASCA_UTR_CAS_3"),                          "1-ENTREGA", True),
+    (DOWN / "TDT_CASCA_LT2.xlsx",                            "1-ENTREGA", False),
+    (*_atual("RGE ADMS_Lista Pontos Casca_CORRIGIDA"),       "1-ENTREGA", False),
     (DOWN / "CASCA_RELATORIO.xlsx",                          "1-ENTREGA", True),
     (RAIZ / "CASCA_HANDOFF.md",                              ".",         True),
     # ── de onde saiu ──
     (DOWN / "RGE ADMS_Lista Pontos Casca.xlsx",  "2-ENTRADAS", True),
-    (DOWN / "PT-MOD-SE-CASCA.xml",               "2-ENTRADAS", True),
+    (DOWN / "PT-MOD-SE-CASCA.xml",               "2-ENTRADAS", False),
+    (DOWN / "PT-MOD-SE-CAS.xml",                 "2-ENTRADAS", False),
     (DOWN / "CASCA.xlsx",                        "2-ENTRADAS", True),
     (DOWN / "TDT_LVA_AL24.xlsx",                 "2-ENTRADAS", False),
     (DOWN / "erros.csv",                         "2-ENTRADAS", False),
@@ -33,6 +43,7 @@ ITENS = [
     # ── o que gera ──
     (RAIZ / "backend/make_casca.py",             "3-CODIGO", True),
     (RAIZ / "backend/casca_devmap.py",           "3-CODIGO", True),
+    (RAIZ / "backend/casca_status.py",           "3-CODIGO", False),
     (RAIZ / "backend/check_casca.py",            "3-CODIGO", True),
     (RAIZ / "backend/excel_native.py",           "3-CODIGO", True),
     (RAIZ / "backend/tdt_engine.py",             "3-CODIGO", True),
@@ -95,12 +106,18 @@ def main():
     faltando = []
     with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         z.writestr("LEIA-ME.txt", LEIAME)
-        for src, pasta, obrig in ITENS:
+        for item in ITENS:
+            # itens de _atual() tem nome-no-zip extra: (src, zipnome, pasta, obrig)
+            if len(item) == 4:
+                src, zipnome, pasta, obrig = item
+            else:
+                src, pasta, obrig = item; zipnome = None
             if not src.exists():
                 if obrig:
                     faltando.append(src.name)
                 continue
-            destino = f"{pasta}/{src.name}" if pasta != "." else src.name
+            nome = zipnome or src.name
+            destino = f"{pasta}/{nome}" if pasta != "." else nome
             z.write(src, destino)
             print(f"  + {destino}  ({src.stat().st_size:,} b)")
     print(f"\n{OUT.name}: {OUT.stat().st_size:,} bytes")
