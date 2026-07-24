@@ -85,6 +85,9 @@ MODULO_EQUIV = {
 }
 
 MODELO = Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CASCA.xml")
+# Export do modelo DEPOIS de o usuario renomear os dispositivos com _NEW.
+# Usado so para CONFERIR (aba 21 do relatorio) — nao alimenta a resolucao.
+MODELO_NEW = Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CAS.xml")
 TDT_ATUAL = Path("C:/Users/egnpo/Downloads/CASCA.xlsx")
 PROP_SCADA_ID = "1224979098644840199"
 HEADER_ROWS = 4
@@ -426,6 +429,20 @@ def nome_do_dispositivo(dm: str) -> str:
                     por[m.group(1)].add(n.group(1))
         _CACHE["nomedisp"] = {k: next(iter(v)) for k, v in por.items() if len(v) == 1}
     return _CACHE["nomedisp"].get(dm, "")
+
+
+def modelo_new():
+    """Do PT-MOD-SE-CAS.xml (modelo ja com _NEW): (ids_validos, ids_duplicados).
+    ids_duplicados = os que aparecem em 2+ dispositivos (o ADMS da 'Found
+    multiple')."""
+    if "modelo_new" not in _CACHE:
+        por = collections.defaultdict(int)
+        if MODELO_NEW.exists():
+            txt = MODELO_NEW.read_text(encoding="utf-8-sig", errors="replace")
+            for m in re.findall(rf'id="{PROP_SCADA_ID}" value="([^"]+)"', txt):
+                por[m] += 1
+        _CACHE["modelo_new"] = (set(por), {k for k, v in por.items() if v > 1})
+    return _CACHE["modelo_new"]
 
 
 def container_da_subestacao() -> tuple[str, str]:

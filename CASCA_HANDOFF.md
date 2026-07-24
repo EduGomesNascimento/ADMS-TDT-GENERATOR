@@ -924,3 +924,47 @@ Chaves em `backend/make_casca.py`: `DM_ESTRITO` (só o catálogo) e `DM_NA_UTR`
 > As coordenadas **não mudam** por causa do recorte — o sequenciamento continua
 > global, sobre os 2535 pontos da lista. A lista corrigida segue valendo
 > inteira, e o que entra na TDT agora é um subconjunto dela.
+
+---
+
+## 20. Conferencia do modelo ja renomeado (PT-MOD-SE-CAS.xml)
+
+O usuario renomeou dispositivos com `_NEW` e exportou o modelo. O gerador cruza
+esse XML (`casca_devmap.modelo_new`) com o que a TDT usa e produz duas abas:
+
+- **`21-FALTA renomear no modelo`** — os `_NEW` que a TDT usa e o modelo NAO tem
+- **`22-DUPLICADO no modelo`** — os `_NEW` que existem em 2+ equipamentos
+
+Alem disso, `DM_SO_EXATO = True` foi ligado: o Device Mapping sai SO do valor
+exato/renumerado da CASCA.xlsx (nada de rebaixar para o disjuntor do vao), e o
+resto vai para a UTR. Isso elimina os 109 "already mapped".
+
+### 21 — faltam 23 dispositivos (142 sinais)
+
+O usuario renomeou os alimentadores e as linhas LTSCO/LTPRI, mas faltou:
+
+| Vao | Dispositivos | Sinais |
+|---|---|---|
+| **LTMRU** (o LT KVM / LT3) | DJ + 8 reles (25, 51F, 62BF, 67FT, 67NT, 21Z2/3/4) | 50 |
+| **TR1** | corpo (TR), COMTAP, TAP_REG | 26 |
+| **TR2** | corpo (TR), COMTAP, TAP_REG | 21 |
+| **TR1AT, TR1BT, TR2AT, TR2BT** | os 4 TCs | 40 |
+| **B138, BP23** | barras + TP | 3 |
+| **TSA3** | retificador | 2 |
+
+### 22 — 4 IDs duplicados no modelo
+
+O mesmo `_NEW` foi posto em DOIS equipamentos — continua ambiguo:
+
+| ID `_NEW` | Equipamentos | Sinais |
+|---|---|---|
+| `CAS_LTPRI_52-21_DJ_NEW` | disjuntores 52-21 **e** 52-22 | 39 |
+| `CAS_LTMRU_89-112_SEC_NEW` | seccionadoras 89-112 **e** 89-114 | 10 |
+| `CAS_LTMRU_29-5_SEC_NEW` | 29-5 **e** 29-7 | 1 |
+| `CAS_LTPRI_LTPRI_PROT_81_U1_NEW` | dois reles 81 | 0 na TDT |
+
+Dar ID distinto ao segundo de cada par (ex.: `52-22 -> CAS_LTPRI_52-22_DJ_NEW`).
+
+> Depois de renomear os 23 e desduplicar os 4, roda-se `make_casca.py` e
+> `casca_status.py <novo erros.csv>` — o que sobrar sera so o que esta na UTR
+> (vaos ainda inexistentes) e os 4 sinais de CDC/R90 (erro 9, UTR IEC antiga).

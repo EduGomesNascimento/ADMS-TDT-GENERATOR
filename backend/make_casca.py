@@ -122,7 +122,7 @@ DM_NA_UTR = True
 # para (vao, sigla) — inclusive o equipamento renumerado. NAO rebaixa para o
 # disjuntor/seccionadora do vao (o que empilha varios sinais num dispositivo e
 # gera "already mapped"). O que nao casa exatamente vai para a UTR.
-DM_SO_EXATO = False
+DM_SO_EXATO = True
 
 # Gerar SÓ um vão (--modulo LT2 / --modulo LTPRI). As coordenadas continuam as
 # do sequenciamento GLOBAL — o recorte não renumera nada, só filtra os sinais,
@@ -765,6 +765,43 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
           ["Aba", "Linha", "Tipo", "SIGLA", "NOME", "Por que nao achou dispositivo"],
           list(dm.get("sem_dm", [])),
           fills=lambda r: warn)
+
+    # ── conferencia contra o modelo JA renomeado (PT-MOD-SE-CAS.xml) ─────────
+    modelo_ok, modelo_dup = devmap.modelo_new()
+    if modelo_ok:
+        precisa = Counter()
+        for r in dm.get("linhas", []):
+            d = str(r[5])
+            if d != RU:                     # ignora os que estao na UTR
+                precisa[d] += 1
+        faltam = OrderedDict()
+        duplic = OrderedDict()
+        for d, n in sorted(precisa.items()):
+            if d in modelo_dup:
+                duplic[d] = n
+            elif d not in modelo_ok:
+                faltam[d] = n
+        _tipo = lambda k: ("Rele (PROTECTEQP)" if "_PROT" in k else
+                           "Disjuntor (BREAKER)" if k.endswith("DJ_NEW") else
+                           "Seccionadora (DISCONNECTOR)" if k.endswith("SEC_NEW") else
+                           "Trafo (POWERTR)" if k.endswith("TR_NEW") else
+                           "Comutador/Regulador" if k.endswith(("COMTAP_NEW", "TAP_REG_NEW")) else
+                           "TC (CURRENTTR)" if k.endswith("TC_NEW") else
+                           "TP (POTENTIALTR)" if k.endswith("TP_NEW") else
+                           "Barra (BUSBAR)" if k.endswith("BP_NEW") else
+                           "Retificador" if k.endswith("RET_NEW") else "?")
+        sheet("21-FALTA renomear no modelo",
+              ["Device Mapping (_NEW) que a TDT usa", "Sinais que dependem",
+               "Tipo de dispositivo", "Vao"],
+              [[k, n, _tipo(k), k.split("_")[1]] for k, n in faltam.items()],
+              fills=lambda r: warn)
+        sheet("22-DUPLICADO no modelo (_NEW)",
+              ["Device Mapping (_NEW)", "Sinais na TDT", "O que fazer"],
+              [[k, precisa.get(k, 0),
+                "Dois equipamentos tem este mesmo _NEW. Dar ID distinto ao "
+                "segundo (ex.: 52-22 -> CAS_LTPRI_52-22_DJ_NEW)."]
+               for k in sorted(modelo_dup)],
+              fills=lambda r: warn)
 
     sheet("18-Remote Point Custom ID",
           ["NOME na TDT", "SIGLA", "Aba da lista", "Linha", "Remote Point Custom ID"],
