@@ -118,6 +118,12 @@ DM_ESTRITO = True
 # certo, sem precisar reimportar tudo. Aba 19 do relatorio lista quais sao.
 DM_NA_UTR = True
 
+# Quando True, o resolver so aceita o Device Mapping EXATO que a CASCA.xlsx usa
+# para (vao, sigla) — inclusive o equipamento renumerado. NAO rebaixa para o
+# disjuntor/seccionadora do vao (o que empilha varios sinais num dispositivo e
+# gera "already mapped"). O que nao casa exatamente vai para a UTR.
+DM_SO_EXATO = False
+
 # Gerar SÓ um vão (--modulo LT2 / --modulo LTPRI). As coordenadas continuam as
 # do sequenciamento GLOBAL — o recorte não renumera nada, só filtra os sinais,
 # então a TDT parcial e a completa são compatíveis entre si.
@@ -603,6 +609,30 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
          "pendurados na propria UTR. Quando o dispositivo existir, e so "
          "remapear. Abas 19 (sinais) e 13 (dispositivos a criar).",
          "CONTORNADO"],
+        ["13", "Import (_NEW)", "Could not find any device ... _NEW  (188 sinais)",
+         "Com o _NEW, os alimentadores mapearam, mas 20 dispositivos ainda NAO "
+         "foram renomeados no modelo: LTMRU inteiro (61), os trafos TR1/TR2 e "
+         "seus lados AT/BT + COMTAP (109), barras B138/BP23 (7), TSA3 (1).",
+         "Renomear ESSES dispositivos no Cas_Obra acrescentando _NEW, igual "
+         "aos alimentadores. Lista completa na aba 4 do CASCA_STATUS_IMPORT.",
+         "EM ABERTO — falta renomear no modelo"],
+        ["14", "Import (_NEW)", "Found multiple devices ..._NEW  (61 sinais)",
+         "3 IDs foram renomeados para _NEW em DOIS equipamentos ao mesmo tempo: "
+         "CAS_LTPRI_52-21_DJ_NEW responde por 52-21 E 52-22; "
+         "CAS_LTMRU_89-112_SEC_NEW por 89-112 e 89-114; "
+         "CAS_LTMRU_29-5_SEC_NEW por 29-5 e 29-7.",
+         "Dar ID distinto ao segundo de cada par no modelo "
+         "(ex.: 52-22 -> CAS_LTPRI_52-22_DJ_NEW). Sao os 7 IDs da aba 17.",
+         "EM ABERTO — dar ID distinto no modelo"],
+        ["15", "Import", "Same signal ... already mapped on device ... in same "
+         "mapping action  (109 sinais)",
+         "Onde o rele especifico da lista NAO existe no modelo, o gerador "
+         "rebaixava varios sinais para o MESMO disjuntor/seccionadora — e o "
+         "ADMS so aceita um sinal por papel no dispositivo.",
+         "Rebaixar contraria 'usar o device mapping da antiga'. Opcao: ligar "
+         "DM_SO_EXATO para usar SO o DM exato da CASCA.xlsx (por vao+sigla) e "
+         "mandar o resto pra UTR, em vez de empilhar.",
+         "EM ABERTO — decisao: rebaixar ou UTR"],
     ]
     sheet("20-Historico de erros",
           ["#", "Onde", "Mensagem do ADMS / sintoma", "Causa", "Resolucao",
@@ -1012,6 +1042,10 @@ def main():
             na_utr = False
             if DM_ESTRITO:
                 dm_base, dm_o = devmap.resolver_estrito(p["nome"], p["sigla"])
+                # sem rebaixamento: so o DM exato/renumerado da CASCA.xlsx
+                if DM_SO_EXATO and dm_base is not None and any(
+                        k in dm_o for k in ("fallback", "rele generico")):
+                    dm_base = None
                 # rebaixado = nao caiu no dispositivo ideal do sinal
                 dm_pend = (dm_o if any(k in dm_o for k in
                                        ("fallback", "rele generico", "renumerado"))

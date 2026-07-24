@@ -44,14 +44,19 @@ def ler_erros(caminho: Path):
             d = r[3]
             m = re.search(r"Mapping: (\S+?)\.? Signal", d)
             dm = m.group(1) if m else ""
-            if "Found multiple" in d:
+            if "successfully mapped" in d or "updated with new values" in d:
+                classe = "MAPEOU"                        # sucesso!
+                m2 = re.search(r"device[:]? (\S+?)[\. ]", d)
+                dm = m2.group(1) if m2 else dm
+            elif "Found multiple" in d:
                 classe = "DUPLICADO no modelo"
             elif "Could not find any" in d:
-                classe = "NAO EXISTE no modelo"
-            elif "already has client points" in d:
-                classe = "SINAL JA EXISTE no dispositivo"
-                m2 = re.search(r"on device (\S+)", d)
-                dm = m2.group(1) if m2 else dm
+                classe = ("na UTR (dispositivo nao existe)" if dm == "UTR_CAS_3"
+                          else "DISPOSITIVO SEM _NEW")
+            elif "already" in d:                          # 2 sinais / 1 device
+                classe = "SINAL JA MAPEADO no dispositivo"
+                m2 = re.search(r"on device[:]? (\S+)", d)
+                dm = m2.group(1).rstrip(".") if m2 else dm
             else:
                 classe = "outro"
             out[r[1]] = (classe, dm, d)
