@@ -98,12 +98,11 @@ SIGNAL_ALIAS = date.today().strftime("%d/%m/%Y")
 # O Cas_Obra é cópia integral da CASCA e herdou TODOS os IDs de Mapeamento
 # SCADA, então cada ID responde por dois dispositivos e o ADMS recusa:
 #   "Found multiple devices that correspond to Device Mapping: ..."
-# Solução combinada: os dispositivos da cópia recebem "_2" no ID. A TDT passa a
-# apontar para o ID com sufixo — CAS_AL13_52-3_DJ vira CAS_AL13_52-3_DJ_2 —
-# e a ambiguidade some, porque esse texto só existe no Cas_Obra.
-# Vale para TODOS: os que já existem (renomear no modelo) e os que ainda serão
-# criados (nascem já com o sufixo). Aba 13 do relatório já lista com o "_2".
-DM_SUFIXO = ""
+# O USUARIO renomeou os dispositivos do Cas_Obra no ADMS acrescentando "_NEW".
+# A TDT aponta para o ID com esse sufixo — CAS_LTSCO_52-20_DJ vira
+# CAS_LTSCO_52-20_DJ_NEW — e a ambiguidade some, porque esse texto so existe
+# no Cas_Obra. O sinal que cai na UTR (sem dispositivo) NAO recebe sufixo.
+DM_SUFIXO = "_NEW"
 
 # ── SÓ os Device Mappings que existem na TDT atual da CASCA ──────────────────
 # "todos os device mapping necessarios estao aqui. nao existe outros."
@@ -583,11 +582,12 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
          "O Cas_Obra e COPIA da CASCA e herdou TODOS os IDs de Mapeamento "
          "SCADA. Cada ID responde por DOIS dispositivos — um em cada "
          "subestacao — e o ADMS se recusa a escolher. Nao e erro da TDT.",
-         "TENTADO E SEM EFEITO: preencher Substation=Cas_Obra e a coluna "
-         "Device (o ADMS resolve o DM globalmente e ignora as duas). "
-         "SO RESOLVE NO MODELO: dar um ID de Mapeamento SCADA proprio a cada "
-         "dispositivo do Cas_Obra. Aba 17 lista os afetados.",
-         "EM ABERTO — E O ERRO DA FOTO"],
+         "TENTADO E SEM EFEITO: Substation=Cas_Obra e a coluna Device (o ADMS "
+         "resolve o DM globalmente e ignora as duas). RESOLVIDO NO MODELO: o "
+         "usuario renomeou os dispositivos do Cas_Obra acrescentando '_NEW', e "
+         "a TDT passou a apontar para o ID com sufixo (DM_SUFIXO='_NEW'). Esse "
+         "texto so existe no Cas_Obra, entao a ambiguidade acabou.",
+         "RESOLVIDO"],
         ["11", "Diagnostico", "1282 de 1282 sinais falharam de uma vez",
          "Ao trocar o Remote Point Custom ID para o ordinal Cas_obra_id_00001, "
          "todo sinal virou NOVO e o Device Mapping foi re-resolvido do zero. "
@@ -1009,6 +1009,7 @@ def main():
                 continue
             # Device Mapping resolvido ANTES de montar a linha: no modo estrito
             # o sinal sem alvo no catalogo da CASCA nao entra na TDT.
+            na_utr = False
             if DM_ESTRITO:
                 dm_base, dm_o = devmap.resolver_estrito(p["nome"], p["sigla"])
                 # rebaixado = nao caiu no dispositivo ideal do sinal
@@ -1020,7 +1021,7 @@ def main():
                                    p["nome"], dm_o])
                     if not DM_NA_UTR:
                         continue
-                    dm_base, dm_o = RU, "na UTR (sem dispositivo)"
+                    dm_base, dm_o, na_utr = RU, "na UTR (sem dispositivo)", True
             else:
                 dm_base, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
             # NOME final (2ª ocorrência de um nome repetido leva sufixo no device)
@@ -1057,8 +1058,10 @@ def main():
             # Device Mapping SEMPRE sobrescrito: o molde traz o DM da subestação
             # de ORIGEM (lixo). Aqui vale a regra da PRÓPRIA CASCA, aprendida da
             # TDT atual — ver casca_devmap.py.
-            # o dispositivo do Cas_Obra leva o sufixo do ID (ver DM_SUFIXO)
-            dm = f"{dm_base}{DM_SUFIXO}"
+            # o dispositivo do Cas_Obra leva o sufixo do ID (ver DM_SUFIXO).
+            # O sinal que caiu na UTR NAO recebe sufixo: UTR_CAS_3 e o nome da
+            # UTR, nao de um dispositivo renomeado.
+            dm = dm_base if na_utr else f"{dm_base}{DM_SUFIXO}"
             put("Device Mapping", dm)
             put("Substation", cont_nome)
             nd = devmap.nome_do_dispositivo(dm_base)
