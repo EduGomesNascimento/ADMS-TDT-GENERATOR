@@ -450,6 +450,86 @@ def modelo_new():
     return _CACHE["modelo_new"]
 
 
+def _vao_suf(dm: str) -> tuple[str, str]:
+    """'CAS_LTKVM_52-1_DJ_NEW' -> ('LTKVM', 'DJ_NEW'); o device fica de fora."""
+    p = dm.split("_")
+    if len(p) < 4:
+        return (p[1] if len(p) > 1 else "", "")
+    return p[1], "_".join(p[3:])
+
+
+def indice_modelo():
+    """Do modelo ja renomeado: (vao, sufixo) -> ID completo, e as ALIAS de vao.
+
+    O vao pode aparecer com DOIS nomes: a LT KVM tem as seccionadoras/TC sob
+    'LTMRU' e o disjuntor/reles sob 'LTKVM'. A alias e derivada da TDT antiga —
+    la o sinal CAS_LTKVM_LTKVM_PROT_21F aponta para CAS_LTMRU_LTMRU_PROT_21F,
+    o que prova que os dois nomes sao o mesmo vao.
+    """
+    if "idx_modelo" not in _CACHE:
+        val, _dup = modelo_new()
+        por = {}
+        for dm in val:
+            v, s = _vao_suf(dm)
+            if s:
+                por.setdefault((v, s), dm)
+        # Alias vao-do-sinal <-> vao-do-dispositivo, aprendida da TDT antiga.
+        # So conta como alias o par com EVIDENCIA FORTE: >=5 sinais e >=60% dos
+        # sinais daquele vao. Sem isso entram pares que sao mero fallback
+        # (TR1BT->TR1 com 21%, AL13->AL12 com 2%...). Na CASCA passam so
+        # LTKVM<->LTMRU (67 sinais, 94%) e DJHIB<->LTPRI (7, 87%).
+        par = collections.Counter(); tot_vao = collections.Counter()
+        alias = collections.defaultdict(set)
+        if TDT_ATUAL.exists():
+            wb = openpyxl.load_workbook(TDT_ATUAL, read_only=True, data_only=True)
+            for sn in wb.sheetnames:
+                if "Signals" not in sn and "DiscreteAnalog" not in sn:
+                    continue
+                rows = list(wb[sn].iter_rows(values_only=True))
+                if len(rows) <= HEADER_ROWS:
+                    continue
+                hdr = [str(c or "").strip() for c in rows[HEADER_ROWS - 1]]
+                ix = {n: i for i, n in enumerate(hdr) if n}
+                cD = ix.get("Device Mapping")
+                if cD is None:
+                    continue
+                for r in rows[HEADER_ROWS:]:
+                    if not r or not r[0]:
+                        continue
+                    nome, dm = str(r[0]).strip(), str(r[cD] or "").strip()
+                    pn, pd = nome.split("_"), dm.split("_")
+                    if (len(pn) > 1 and len(pd) > 1 and nome.startswith("CAS_")
+                            and dm.startswith("CAS_")):
+                        tot_vao[pn[1]] += 1
+                        if pn[1] != pd[1]:
+                            par[(pn[1], pd[1])] += 1
+            wb.close()
+        for (a, b), n in par.items():
+            if n >= 5 and n >= 0.60 * tot_vao[a]:
+                alias[a].add(b)
+                alias[b].add(a)
+        _CACHE["idx_modelo"] = (por, {k: sorted(v) for k, v in alias.items()})
+    return _CACHE["idx_modelo"]
+
+
+def no_modelo(dm_com_sufixo: str) -> tuple[str | None, str]:
+    """Acha o ID REAL do modelo para um Device Mapping ja com o sufixo.
+    Devolve (id_real, nota). Tenta o texto exato e depois os nomes ALIAS do vao
+    (LTMRU <-> LTKVM), porque o mesmo vao pode ter dois nomes no modelo."""
+    por, alias = indice_modelo()
+    if not por:
+        return dm_com_sufixo, ""                 # sem XML: aceita como esta
+    v, s = _vao_suf(dm_com_sufixo)
+    if (v, s) in por and por[(v, s)] == dm_com_sufixo:
+        return dm_com_sufixo, ""
+    if (v, s) in por:
+        return por[(v, s)], f"equipamento renumerado no modelo"
+    for outro in alias.get(v, []):
+        if (outro, s) in por:
+            return por[(outro, s)], f"vao {v} esta como {outro} no modelo"
+    return None, f"nao existe no modelo"
+
+
 def container_da_subestacao() -> tuple[str, str]:
     """(nome, custom id) da SUBSTATION do modelo — é ela que o campo Container
     da aba DNP3_RTUs referencia (no esqueleto da LVA era 'LAGOA VERMELHA 1').

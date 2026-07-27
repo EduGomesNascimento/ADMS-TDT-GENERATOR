@@ -122,7 +122,13 @@ DM_NA_UTR = True
 # para (vao, sigla) — inclusive o equipamento renumerado. NAO rebaixa para o
 # disjuntor/seccionadora do vao (o que empilha varios sinais num dispositivo e
 # gera "already mapped"). O que nao casa exatamente vai para a UTR.
-DM_SO_EXATO = True
+# Voltou para False depois que passaram a existir DUAS travas que tornam o
+# rebaixamento seguro: (1) todo Device Mapping e reconciliado contra o modelo
+# REAL (devmap.no_modelo) — se o dispositivo nao existe, o sinal vai pra UTR em
+# vez de gerar "Could not find any device"; (2) um papel por dispositivo, que
+# evita o "already mapped". Com rebaixamento: 632 sinais em dispositivo real,
+# contra 392 sem ele. Ligue de novo se preferir so o DM exato da antiga.
+DM_SO_EXATO = False
 
 # Gerar SÓ um vão (--modulo LT2 / --modulo LTPRI). As coordenadas continuam as
 # do sequenciamento GLOBAL — o recorte não renumera nada, só filtra os sinais,
@@ -421,24 +427,42 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     falta_dm = OrderedDict((k, v) for k, v in sorted(precisa_dm.items())
                            if modelo_ok and k not in modelo_ok and k not in modelo_dup)
     n_utr = sum(1 for r in _linhas if str(r[5]) == RU)
+    n_real = sum(v for k, v in precisa_dm.items() if k in modelo_ok)
     falta_por_vao = Counter()
     for k, v in falta_dm.items():
         falta_por_vao[k.split("_")[1]] += v
+    # o que os sinais da UTR PRECISARIAM que existisse (para o time criar)
+    falta_utr = Counter()
+    for x in (dm or {}).get("sem_dm", []):
+        m = re.search(r"(CAS_\S+?_NEW)", str(x[5]))
+        if m:
+            falta_utr[m.group(1)] += 1
 
     # ── PRIMEIRA ABA: o que falta corrigir ──────────────────────────────────
     P = [["ESTA TDT ESTA PRONTA PARA IMPORTAR. O que falta e no MODELO do ADMS."],
          [""],
          ["JA FUNCIONA (nao mexer)"],
          [f"  - {len(_linhas)} sinais na TDT, coordenadas todas unicas e conferidas"],
-         [f"  - {n_ok - n_reb} sinais em dispositivo exato do CASCA.xlsx (com _NEW)"],
+         [f"  - {n_real} sinais apontam para um dispositivo que EXISTE no modelo"],
+         [f"  - {n_utr} sinais ficam na UTR_CAS_3 (ver item 3)"],
+         ["  - ZERO sinais apontando para dispositivo inexistente: todo Device"],
+         ["    Mapping foi conferido contra o PT-MOD-SE-CAS.xml, entao NAO deve"],
+         ["    haver 'Could not find any device' no proximo import"],
          [f"  - Container Cas_Obra + Custom ID, Remote Point Custom ID ordinal,"],
          ["    Signal Alias = data da leva, descricao na coluna Description"],
          [""],
          ["=================  O QUE FALTA CORRIGIR NO MODELO  ================="],
          [""],
          ["1) RENOMEAR/CRIAR dispositivos com _NEW  (aba 21) — "
-          f"{sum(falta_dm.values())} sinais em {len(falta_dm)} dispositivos"],
-         ["   Voce renomeou os alimentadores e LTSCO/LTPRI; faltou:"]]
+          + (f"{sum(falta_dm.values())} sinais em {len(falta_dm)} dispositivos"
+             if falta_dm else "NADA A FAZER")]]
+    if falta_dm:
+        P.append(["   Voce renomeou os alimentadores e LTSCO/LTPRI; faltou:"])
+    else:
+        P += [["   Todo Device Mapping da TDT ja existe no modelo. O gerador"],
+              ["   reconcilia contra o PT-MOD-SE-CAS.xml e, quando o vao esta com"],
+              ["   outro nome (a LT KVM tem o disjuntor e os reles sob 'LTKVM' e"],
+              ["   as seccionadoras sob 'LTMRU'), usa o ID que existe de verdade."]]
     _nome_vao = {"LTMRU": "LT KVM (a LT da ponta)", "TR1": "Trafo 1 (corpo)",
                  "TR2": "Trafo 2 (corpo)", "TR1AT": "TR1 lado AT",
                  "TR1BT": "TR1 lado BT", "TR2AT": "TR2 lado AT",
@@ -446,28 +470,36 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
                  "BP23": "Barra 23 kV", "TSA3": "Servico auxiliar"}
     for vao, n in sorted(falta_por_vao.items(), key=lambda x: -x[1]):
         P.append([f"     {n:>4} sinais   vao {vao:<7} {_nome_vao.get(vao, '')}"])
+    _ndup = sum(precisa_dm.get(k, 0) for k in modelo_dup)
     P += [[""],
           ["2) DESDUPLICAR IDs que estao em 2 equipamentos  (aba 22) — "
-           f"{sum(precisa_dm.get(k, 0) for k in modelo_dup)} sinais"],
-          ["   O mesmo _NEW foi posto em dois equipamentos. Dar ID proprio ao 2o:"]]
+           + (f"{_ndup} sinais" if _ndup else
+              f"nenhum sinal afetado ({len(modelo_dup)} IDs duplicados no modelo)")]]
     for k in sorted(modelo_dup):
         P.append([f"     {precisa_dm.get(k, 0):>4} sinais   {k}"])
-    P += [["   (o 52-22 voce ja corrigiu para CAS_LTPRI_52-22_DJ_NEW — falta o resto)"],
-          [""],
+    if not _ndup:
+        P.append(["   Nenhum sinal da TDT usa esses IDs — pode deixar pra depois,"])
+        P.append(["   mas vale dar ID proprio ao 2o equipamento de cada par."])
+    P += [[""],
           ["3) SINAIS PENDURADOS NA UTR  (aba 19) — "
            f"{n_utr} sinais"],
-          ["   Dois motivos, os dois OK por enquanto:"],
+          ["   Entram na TDT normalmente, so que ligados a UTR em vez de um"],
+          ["   dispositivo. Tres motivos, todos OK por enquanto:"],
           ["   a) vaos que a CASCA de hoje NAO tem: AL18 (BC1 e transf. 24-1),"],
           ["      AL24, AL25, AL26, TRF29 (24-2), AL28 (BC2), IB20, BP213.8, TSA2."],
-          ["   b) rele especifico que nao existe no modelo (DM_SO_EXATO ligado:"],
-          ["      em vez de empilhar no disjuntor do vao — o que dava 'already"],
-          ["      mapped' — fica na UTR)."],
+          ["   b) o dispositivo nao existe no modelo (conferido no XML)."],
           ["   c) o vao do modelo tem MENOS equipamentos que a lista. Ex.: o"],
           ["      TR2AT so tem a seccionadora 89-16 e a lista traz 89-20, 89-22"],
-          ["      e 89-24 — as tres viravam o mesmo sinal. O 1o fica no"],
-          ["      dispositivo, os outros vao pra UTR. Criar os equipamentos que"],
-          ["      faltam no vao resolve (o motivo esta escrito na aba 19)."],
-          ["   Nos tres casos: quando o dispositivo existir, e so remapear."],
+          ["      e 89-24 — as tres viravam o mesmo sinal de posicao. O 1o fica"],
+          ["      no dispositivo, os outros vao pra UTR."],
+          ["   Nos tres casos: quando o dispositivo existir, e so remapear —"],
+          ["   nada precisa ser refeito. A aba 19 diz o motivo de cada um."],
+          [""],
+          ["   GANHO RAPIDO: criar os 6 dispositivos da ABA 23 tira "
+           f"{sum(falta_utr.values())} sinais da UTR:"]]
+    for k, v in falta_utr.most_common(8):
+        P.append([f"     {v:>4} sinais   {k}"])
+    P += [["   O resto da UTR depende de criar os vaos novos (aba 13)."],
           [""],
           ["4) CDC / R90 do TR6 e TR7  (erro 9, aba 20) — 4 sinais"],
           ["   O ponto ja existe no dispositivo vindo da UTR IEC antiga. Decidir"],
@@ -724,6 +756,28 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
          "fica, os demais vao para a UTR (110 sinais) com o motivo escrito na "
          "aba 19. Assim eles ENTRAM na TDT em vez de serem recusados.",
          "CONTORNADO — criar os equipamentos que faltam no vao"],
+        ["18", "Modelo", "O MESMO vao aparece com DOIS nomes no modelo",
+         "A LT KVM tem as seccionadoras (29-5, 29-7, 89-112, 89-114), o TC e um "
+         "TP sob 'LTMRU', e o disjuntor 52-1 mais os 58 reles sob 'LTKVM'. A "
+         "TDT antiga so conhecia 'LTMRU', entao o disjuntor e os reles novos "
+         "nao eram encontrados.",
+         "devmap.indice_modelo() aprende a ALIAS de vao da propria TDT antiga "
+         "(la o sinal CAS_LTKVM_* aponta para device CAS_LTMRU_*, 67 sinais / "
+         "94% do vao) e devmap.no_modelo() troca pelo ID que existe. So conta "
+         "alias com >=5 sinais e >=60% de dominancia — senao entravam pares que "
+         "sao mero fallback (TR1BT->TR1 com 21%, AL13->AL12 com 2%).",
+         "RESOLVIDO"],
+        ["19", "Gerador", "Device Mapping apontando para dispositivo que nao "
+         "existe (a causa de todo 'Could not find any device')",
+         "O Device Mapping saia da convencao da TDT antiga sem ninguem conferir "
+         "se aquele dispositivo existe HOJE no modelo.",
+         "Passou a haver uma RECONCILIACAO obrigatoria: todo DM e procurado no "
+         "PT-MOD-SE-CAS.xml; se nao existe (nem por alias de vao), o sinal vai "
+         "para a UTR. Resultado: ZERO sinais apontando para dispositivo "
+         "inexistente. Isso tambem tornou o rebaixamento seguro, entao "
+         "DM_SO_EXATO voltou a False (632 sinais em dispositivo real, contra "
+         "392 sem rebaixar).",
+         "RESOLVIDO"],
     ]
     sheet("20-Historico de erros",
           ["#", "Onde", "Mensagem do ADMS / sintoma", "Causa", "Resolucao",
@@ -893,6 +947,10 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
                 "segundo (ex.: 52-22 -> CAS_LTPRI_52-22_DJ_NEW)."]
                for k in sorted(modelo_dup)],
               fills=lambda r: warn)
+
+    sheet("23-Dispositivos p-os da UTR",
+          ["Device Mapping que faltaria", "Sinais que ganhariam", "Vao"],
+          [[k, v, k.split("_")[1]] for k, v in falta_utr.most_common()])
 
     sheet("18-Remote Point Custom ID",
           ["NOME na TDT", "SIGLA", "Aba da lista", "Linha", "Remote Point Custom ID"],
@@ -1191,6 +1249,17 @@ def main():
                 dm_pend = (dm_o if any(k in dm_o for k in
                                        ("fallback", "rele generico", "renumerado"))
                            else "")
+                # RECONCILIA com o modelo REAL: o vao pode estar com outro nome
+                # (a LT KVM tem o disjuntor/reles sob 'LTKVM' e as seccionadoras
+                # sob 'LTMRU'). Aqui trocamos pelo ID que existe de verdade.
+                if dm_base is not None and DM_SUFIXO:
+                    _real, _nota = devmap.no_modelo(f"{dm_base}{DM_SUFIXO}")
+                    if _real is None:
+                        dm_base, dm_o = None, f"{dm_base}{DM_SUFIXO} nao existe no modelo"
+                    else:
+                        dm_base = _real[:-len(DM_SUFIXO)] if _real.endswith(DM_SUFIXO) else _real
+                        if _nota:
+                            dm_o = f"{dm_o} + {_nota}"
                 # papel ja ocupado nesse dispositivo -> vai pra UTR
                 if dm_base is not None:
                     _k = _papel(dm_base, p["sigla"])
