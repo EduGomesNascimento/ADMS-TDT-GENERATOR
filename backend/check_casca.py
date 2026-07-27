@@ -274,8 +274,8 @@ def main():
     if _rel.exists():
         try:
             _w = openpyxl.load_workbook(_rel, read_only=True, data_only=True)
-            if "19-Mapeados na UTR" in _w.sheetnames:
-                for _r in _w["19-Mapeados na UTR"].iter_rows(
+            if "19-Sem dispositivo no modelo" in _w.sheetnames:
+                for _r in _w["19-Sem dispositivo no modelo"].iter_rows(
                         min_row=2, values_only=True):
                     if _r and _r[4]:
                         fora_ok.add((str(_r[0]), _r[1]))

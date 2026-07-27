@@ -116,7 +116,21 @@ DM_ESTRITO = True
 # UTR_CAS_3), em vez de ficar fora da TDT. Sao os vaos que ainda nao existem
 # no modelo — ficam pendurados na UTR e depois e so remapear pro dispositivo
 # certo, sem precisar reimportar tudo. Aba 19 do relatorio lista quais sao.
-DM_NA_UTR = True
+# O que fazer com o sinal que NAO tem dispositivo valido no modelo.
+#   "canonico" -> CAS_{VAO}_{DEV}_{TIPO}_NEW, o dispositivo IDEAL dele. O ADMS
+#                 recusa com "Could not find any device that corresponds to
+#                 CAS_AL18_24-1_DJ_NEW" — o proprio erro do import vira a lista
+#                 do que criar. E o melhor comportamento.
+#   "utr"      -> Device Mapping = UTR_CAS_3. NAO FUNCIONA: a UTR nao e um
+#                 dispositivo e o ADMS recusa igual, com mensagem inutil.
+#                 Comprovado no ERROS 9.csv (494 sinais).
+#   "fora"     -> deixa o sinal fora da TDT.
+DM_SEM_DISPOSITIVO = "canonico"
+
+# Limite NUMERICO por (tipo de dispositivo, Signal Type) — ver _cabe(). O maximo
+# observado na TDT antiga nao prova o limite do ADMS, entao fica desligado:
+# ligar empurra sinal bom pra fora (605 -> 414 sinais mapeados).
+DM_QUOTA_NUMERICA = False
 
 # Quando True, o resolver so aceita o Device Mapping EXATO que a CASCA.xlsx usa
 # para (vao, sigla) — inclusive o equipamento renumerado. NAO rebaixa para o
@@ -434,9 +448,8 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     # o que os sinais da UTR PRECISARIAM que existisse (para o time criar)
     falta_utr = Counter()
     for x in (dm or {}).get("sem_dm", []):
-        m = re.search(r"(CAS_\S+?_NEW)", str(x[5]))
-        if m:
-            falta_utr[m.group(1)] += 1
+        if len(x) > 5 and str(x[5]).startswith("CAS_"):
+            falta_utr[str(x[5])] += 1
 
     # ── PRIMEIRA ABA: o que falta corrigir ──────────────────────────────────
     P = [["ESTA TDT ESTA PRONTA PARA IMPORTAR. O que falta e no MODELO do ADMS."],
@@ -444,10 +457,12 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
          ["JA FUNCIONA (nao mexer)"],
          [f"  - {len(_linhas)} sinais na TDT, coordenadas todas unicas e conferidas"],
          [f"  - {n_real} sinais apontam para um dispositivo que EXISTE no modelo"],
-         [f"  - {n_utr} sinais ficam na UTR_CAS_3 (ver item 3)"],
-         ["  - ZERO sinais apontando para dispositivo inexistente: todo Device"],
-         ["    Mapping foi conferido contra o PT-MOD-SE-CAS.xml, entao NAO deve"],
-         ["    haver 'Could not find any device' no proximo import"],
+         [f"  - {len(_linhas) - n_real} apontam para o dispositivo que PRECISA existir"],
+         ["    (nome canonico) — o erro do proprio import vira a lista do que criar"],
+         ["  - ZERO Device Mapping com TIPO errado: um DISJUNTOR nao carrega"],
+         ["    RelayTrip nem Enabled neste modelo, entao trip de protecao nunca"],
+         ["    e jogado no disjuntor. Era isso que dava 'already mapped'."],
+         ["  - ZERO 'Found multiple': todo DM e conferido no PT-MOD-SE-CAS.xml"],
          [f"  - Container Cas_Obra + Custom ID, Remote Point Custom ID ordinal,"],
          ["    Signal Alias = data da leva, descricao na coluna Description"],
          [""],
@@ -481,10 +496,12 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
         P.append(["   Nenhum sinal da TDT usa esses IDs — pode deixar pra depois,"])
         P.append(["   mas vale dar ID proprio ao 2o equipamento de cada par."])
     P += [[""],
-          ["3) SINAIS PENDURADOS NA UTR  (aba 19) — "
-           f"{n_utr} sinais"],
-          ["   Entram na TDT normalmente, so que ligados a UTR em vez de um"],
-          ["   dispositivo. Tres motivos, todos OK por enquanto:"],
+          ["3) CRIAR OS DISPOSITIVOS DA ABA 23 (ordenada POR IMPACTO) — "
+           f"{sum(falta_utr.values())} sinais em {len(falta_utr)} dispositivos"],
+          ["   ATENCAO: NAO existe sinal sem dispositivo. Ja tentamos apontar"],
+          ["   para a UTR (Device Mapping = UTR_CAS_3) e o ADMS recusa igual:"],
+          ["   'Could not find any device that corresponds to UTR_CAS_3'."],
+          ["   O sinal so entra quando o dispositivo dele existir. Motivos:"],
           ["   a) vaos que a CASCA de hoje NAO tem: AL18 (BC1 e transf. 24-1),"],
           ["      AL24, AL25, AL26, TRF29 (24-2), AL28 (BC2), IB20, BP213.8, TSA2."],
           ["   b) o dispositivo nao existe no modelo (conferido no XML)."],
@@ -492,14 +509,10 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
           ["      TR2AT so tem a seccionadora 89-16 e a lista traz 89-20, 89-22"],
           ["      e 89-24 — as tres viravam o mesmo sinal de posicao. O 1o fica"],
           ["      no dispositivo, os outros vao pra UTR."],
-          ["   Nos tres casos: quando o dispositivo existir, e so remapear —"],
-          ["   nada precisa ser refeito. A aba 19 diz o motivo de cada um."],
-          [""],
-          ["   GANHO RAPIDO: criar os 6 dispositivos da ABA 23 tira "
-           f"{sum(falta_utr.values())} sinais da UTR:"]]
-    for k, v in falta_utr.most_common(8):
+          ["   Os 12 dispositivos de MAIOR impacto:"]]
+    for k, v in falta_utr.most_common(12):
         P.append([f"     {v:>4} sinais   {k}"])
-    P += [["   O resto da UTR depende de criar os vaos novos (aba 13)."],
+    P += [["   A lista completa esta na aba 23; o motivo de cada sinal, na 19."],
           [""],
           ["4) CDC / R90 do TR6 e TR7  (erro 9, aba 20) — 4 sinais"],
           ["   O ponto ja existe no dispositivo vindo da UTR IEC antiga. Decidir"],
@@ -906,8 +919,9 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
              for m in sorted({x["mod"] for x in dm.get("pendentes", [])
                               if x["pend"].startswith("vao ")})])
 
-    sheet("19-Mapeados na UTR",
-          ["Aba", "Linha", "Tipo", "SIGLA", "NOME", "Por que nao achou dispositivo"],
+    sheet("19-Sem dispositivo no modelo",
+          ["Aba", "Linha", "Tipo", "SIGLA", "NOME",
+           "Device Mapping usado (CRIAR este)", "Por que nao achou"],
           list(dm.get("sem_dm", [])),
           fills=lambda r: warn)
 
@@ -948,8 +962,8 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
                for k in sorted(modelo_dup)],
               fills=lambda r: warn)
 
-    sheet("23-Dispositivos p-os da UTR",
-          ["Device Mapping que faltaria", "Sinais que ganhariam", "Vao"],
+    sheet("23-CRIAR no modelo (impacto)",
+          ["Device Mapping a criar", "Sinais que dependem", "Vao"],
           [[k, v, k.split("_")[1]] for k, v in falta_utr.most_common()])
 
     sheet("18-Remote Point Custom ID",
@@ -1194,13 +1208,26 @@ def main():
     # seccionadora 89-16, e a lista traz 89-20, 89-22 e 89-24), varios sinais
     # cairiam no mesmo dispositivo com o mesmo papel. Aqui o 1o fica e os
     # demais vao para a UTR.
-    _POSICAO = {"SECC", "SECF", "SECT", "SECG", "SECB", "SELF", "DSEC",
-                "LIBM", "SLIB", "SECD", "DJF1", "DJF2"}
-    ocupado = set()
+    QUOTA = devmap.quota_por_tipo()
+    usado_dm = Counter()
 
-    def _papel(dm_alvo, sigla):
-        """Chave do 'papel' que o sinal ocupa no dispositivo."""
-        return (dm_alvo, "POSICAO" if sigla in _POSICAO else sigla)
+    def _cabe(dm_alvo, sig_type):
+        """(cabe?, motivo). Duas regras, com pesos diferentes:
+
+        1) COMPATIBILIDADE DE TIPO (sempre vale). Se a TDT antiga NUNCA poe um
+           sinal desse Signal Type nesse tipo de dispositivo, nao ponha tambem.
+           E o que explica todos os "already mapped" vistos: RelayTrip e Enabled
+           num DISJUNTOR — um DJ nao carrega trip de protecao neste modelo.
+        2) LIMITE NUMERICO (DM_QUOTA_NUMERICA), desligado por padrao.
+        """
+        td = devmap.tipo_dispositivo(dm_alvo)
+        lim = QUOTA.get((td, sig_type), 0)
+        if lim == 0:
+            return False, (f"dispositivo do tipo {td} nao carrega sinal "
+                           f"'{sig_type}' (regra da TDT atual da CASCA)")
+        if DM_QUOTA_NUMERICA and usado_dm[(dm_alvo, sig_type)] >= lim:
+            return False, (f"{dm_alvo} ja tem {lim} sinal(is) '{sig_type}'")
+        return True, ""
     # Ordinal do Remote Point Custom ID calculado sobre a TDT COMPLETA, na
     # mesma ordem em que as linhas sao escritas. Assim o recorte por --modulo
     # mantem os MESMOS ids da TDT inteira e as duas podem conviver no modelo.
@@ -1239,6 +1266,9 @@ def main():
             # Device Mapping resolvido ANTES de montar a linha: no modo estrito
             # o sinal sem alvo no catalogo da CASCA nao entra na TDT.
             na_utr = False
+            _pp = p["nome"].split("_")            # device REAL, p/ o Device Mapping
+            alias = _pp[0]; mod = _pp[1] if len(_pp) > 1 else ""
+            dev = _pp[2] if len(_pp) > 2 else ""
             if DM_ESTRITO:
                 dm_base, dm_o = devmap.resolver_estrito(p["nome"], p["sigla"])
                 # sem rebaixamento: so o DM exato/renumerado da CASCA.xlsx
@@ -1266,29 +1296,30 @@ def main():
                         dm_base = _real[:-len(DM_SUFIXO)] if _real.endswith(DM_SUFIXO) else _real
                         if _nota:
                             dm_o = f"{dm_o} + {_nota}"
-                # papel ja ocupado nesse dispositivo -> vai pra UTR
+                # o dispositivo aceita esse Signal Type?
                 if dm_base is not None:
-                    _k = _papel(dm_base, p["sigla"])
-                    if _k in ocupado:
-                        dm_o = (f"dispositivo {dm_base} ja tem um sinal deste "
-                                f"papel (o vao do modelo tem menos equipamentos "
-                                f"que a lista)")
-                        dm_base = None
+                    _st = str(tpl[L("Signal Type") - 1]) if L("Signal Type") else ""
+                    _cb, _por = _cabe(f"{dm_base}{DM_SUFIXO}", _st)
+                    if not _cb:
+                        dm_base, dm_o = None, _por
                     else:
-                        ocupado.add(_k)
+                        usado_dm[(f"{dm_base}{DM_SUFIXO}", _st)] += 1
                 if dm_base is None:
+                    # nome CANONICO: o dispositivo que este sinal PRECISARIA
+                    _suf, _ = devmap.sufixo(p["sigla"], dev)
+                    _canon = f"{alias}_{mod}_{dev}_{_suf}"
                     sem_dm.append([p["sheet"], p["linha"], p["tipo"], p["sigla"],
-                                   p["nome"], dm_o])
-                    if not DM_NA_UTR:
+                                   p["nome"], f"{_canon}{DM_SUFIXO}", dm_o])
+                    if DM_SEM_DISPOSITIVO == "fora":
                         continue
-                    dm_base, dm_o, na_utr = RU, "na UTR (sem dispositivo)", True
+                    if DM_SEM_DISPOSITIVO == "utr":
+                        dm_base, dm_o, na_utr = RU, "na UTR (sem dispositivo)", True
+                    else:
+                        dm_base, dm_o, na_utr = _canon, f"CRIAR: {dm_o}", False
             else:
                 dm_base, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
             # NOME final (2ª ocorrência de um nome repetido leva sufixo no device)
             nome = nome_tdt.get((p["sheet"], p["linha"]), p["nome"])
-            parts = p["nome"].split("_")           # device REAL, p/ o Device Mapping
-            alias = parts[0]; mod = parts[1] if len(parts) > 1 else ""
-            dev = parts[2] if len(parts) > 2 else ""
             mapping = {"<<PREFIX>>": f"{alias}_{mod}_{dev}", "<<ALIAS>>": alias,
                        "<<MODULE>>": mod, "<<DEVICE>>": dev, "<<N>>": "1"}
             row = [E._subst(v, mapping) for v in tpl]

@@ -33,6 +33,7 @@ Uso: from casca_devmap import resolver; dm, origem, pendente = resolver(nome, si
 """
 from __future__ import annotations
 import collections
+import json
 import re
 from pathlib import Path
 import openpyxl
@@ -565,6 +566,84 @@ def so_no_modelo(nome: str, sigla: str, sufixo_id: str = "_NEW"):
                 base = dm[:-len(sufixo_id)] if dm.endswith(sufixo_id) else dm
                 return base, f"so no modelo novo, fallback {alt} [{mod}->{vao}]"
     return None, f"vao {alvo} nao existe nem no modelo novo"
+
+
+def convencao_base():
+    """Convencao de TODAS as subestacoes, extraida da base completa
+    (backend/_extrai_base.py -> data/convencao_dm.json):
+        sigla_sufixo — 2692 siglas -> tipo de dispositivo que a levam
+        quota        — (tipo, Signal Type) -> maximo observado na base inteira
+    A CASCA sozinha da 156 siglas; a base da 2692. Serve de segunda fonte
+    quando a sigla nao aparece na TDT da propria CASCA.
+    """
+    if "conv" not in _CACHE:
+        f = Path(__file__).parent / "data" / "convencao_dm.json"
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:                                   # noqa: BLE001
+            d = {"sigla_sufixo": {}, "quota": {}}
+        _CACHE["conv"] = d
+    return _CACHE["conv"]
+
+
+def quota_por_tipo():
+    """(tipo de dispositivo, Signal Type) -> quantos sinais cabem.
+
+    Aprendido da TDT ATUAL da CASCA. E a regra que o ADMS aplica quando diz
+    "Same signal ... was already mapped on device". Os numeros observados:
+        PROT  RelayTrip 1 · Enabled 1 · Custom 1
+        DJ    Custom 25 · MeasuredValue 5 · SwitchStatus 2 · Local 1
+              (NENHUM RelayTrip nem Enabled — um disjuntor nao carrega trip
+               de protecao neste modelo; por isso rebaixar um 51F para o DJ e
+               rejeitado)
+        SEC   Custom 3 · SwitchStatus 2
+        TC/TP MeasuredValue 3..5      TR  Custom 46
+    Tipo de dispositivo nao listado, ou par (tipo, Signal Type) inexistente na
+    TDT antiga, significa que aquele sinal NAO vai naquele dispositivo.
+    """
+    if "quota" in _CACHE:
+        return _CACHE["quota"]
+    por = collections.Counter()
+    if TDT_ATUAL.exists():
+        wb = openpyxl.load_workbook(TDT_ATUAL, read_only=True, data_only=True)
+        for sn in wb.sheetnames:
+            if "Signals" not in sn and "DiscreteAnalog" not in sn:
+                continue
+            rows = list(wb[sn].iter_rows(values_only=True))
+            if len(rows) <= HEADER_ROWS:
+                continue
+            hdr = [str(c or "").strip() for c in rows[HEADER_ROWS - 1]]
+            ix = {n: i for i, n in enumerate(hdr) if n}
+            cD, cT = ix.get("Device Mapping"), ix.get("Signal Type")
+            if cD is None or cT is None:
+                continue
+            for r in rows[HEADER_ROWS:]:
+                if not r or not r[0]:
+                    continue
+                d, t = str(r[cD] or "").strip(), str(r[cT] or "").strip()
+                if d.startswith("CAS_"):
+                    por[(d, t)] += 1
+        wb.close()
+    mx = collections.defaultdict(int)
+    for (d, t), v in por.items():
+        mx[(tipo_dispositivo(d), t)] = max(mx[(tipo_dispositivo(d), t)], v)
+    # une com a convencao da BASE COMPLETA: o que vale e o maior dos dois. A
+    # base confirma a regra principal — em NENHUMA subestacao um DISJUNTOR
+    # carrega RelayTrip ou Enabled.
+    for k, v in convencao_base().get("quota", {}).items():
+        td, _, st = k.partition("|")
+        mx[(td, st)] = max(mx[(td, st)], v)
+    _CACHE["quota"] = dict(mx)
+    return _CACHE["quota"]
+
+
+def tipo_dispositivo(dm: str) -> str:
+    """Sufixo que diz QUE tipo de dispositivo e: DJ, SEC, PROT, TR, TC, TP..."""
+    s = dm.split("_", 3)[-1] if dm.count("_") > 2 else ""
+    for p in ("PROT", "P_PROT", "A_PROT"):
+        if s.startswith(p):
+            return "PROT"
+    return s.replace("_NEW", "") or "?"
 
 
 def container_da_subestacao() -> tuple[str, str]:
