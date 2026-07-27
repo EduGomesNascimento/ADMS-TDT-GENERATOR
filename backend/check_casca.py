@@ -207,8 +207,14 @@ def main():
             total += 1
             nomes[str(x.get("Signal Name"))] += 1
             ic = x.get("Input Coordinates")
+            oc = x.get("Output Coordinates")
             if ic in (None, ""):
-                falha(f"{sn}: {x.get('Signal Name')} sem Input Coordinates")
+                # comando PURO: so escrita. O ADMS EXIGE Input vazio nesse caso
+                # ("Number of target elements: 1 outside of allowed range (0,0)
+                #  where REMOTEPOINT_DIRECTION = Write").
+                if oc in (None, ""):
+                    falha(f"{sn}: {x.get('Signal Name')} sem Input nem Output "
+                          f"Coordinates")
             else:
                 for n in _nums(ic):
                     coords[n] += 1

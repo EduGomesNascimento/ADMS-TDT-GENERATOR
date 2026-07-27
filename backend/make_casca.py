@@ -40,6 +40,14 @@ OUT_REL = Path("C:/Users/egnpo/Downloads/CASCA_RELATORIO.xlsx")
 OUT_ATUAL = Path("C:/Users/egnpo/Downloads/TDT_CASCA_ATUAL.xlsx")
 OUT_FUTURA = Path("C:/Users/egnpo/Downloads/TDT_CASCA_FUTURA.xlsx")
 SPLIT_TDT = True
+PULAR_LISTA = False        # --rapido: nao regrava a lista corrigida
+
+# Link de comunicacao da UTR. A aba "Informacoes" da lista so define a porta
+# (20000); o IP esta como "X" — o time de comunicacao preenche depois.
+LINK_NOME = "UTR_CAS_3_Link1"
+LINK_MEIO = "SAT Hughes"
+LINK_IP = ""
+LINK_PORTA = 20000
 
 # Renomear o VAO no NOME do sinal para o nome do ADMS.
 #   "os nomes sao fidedignos a subestacao no ambiente ADMS"
@@ -1183,8 +1191,10 @@ def main():
     print(f"re-sequenciadas: {len(mapa)} coords ({sum(1 for m in mapa if m['mudou']=='SIM')} mudaram)")
 
     # lista de pontos CORRIGIDA (mesma estrutura, INDEX DNP3 arrumado)
-    # com --modulo nao mexe na lista corrigida (as coordenadas sao as mesmas)
-    limpos = [] if SO_TDT else gerar_lista_corrigida(mapa)
+    # A lista corrigida e o passo MAIS LENTO: congela ~5300 formulas e ainda
+    # passa pelo Excel (COM). Ela so muda quando a LISTA muda — com --rapido
+    # (ou --modulo) e pulada, e a geracao cai de ~10 min para ~3.
+    limpos = [] if (SO_TDT or PULAR_LISTA) else gerar_lista_corrigida(mapa)
 
     # siglas sem template + nomes duplicados
     sem_tpl = defaultdict(lambda: {"n": 0, "sheets": set(), "nomes": []})
@@ -1237,19 +1247,22 @@ def main():
         cmd.setdefault(alvo["nome"], coord)
     if cmd_realoc:
         print(f"comando casado por MODULO+SIGLA (nome do device difere): {len(cmd_realoc)}")
-    # comando puro vira um sinal discreto próprio, com Input de preenchimento
+    # Comando PURO: o remote point e so de ESCRITA, entao NAO pode ter Input
+    # Coordinates. O validador do ADMS reclama com "Number of target elements:
+    # 1 outside of allowed range: (0, 0) where REMOTEPOINT_DIRECTION = Write".
     sinteticos = []
     for i, o in enumerate(cmd_orfaos):
         chave = (f"{o['sheet']} (comando)", o["linha"])
-        o["input"] = str(FILLER_BASE + i)
+        o["input"] = ""                     # sem Input: e comando puro
         final[chave] = o["input"]
         cmd.setdefault(o["nome"], o["coord"])
         sinteticos.append({**o, "tipo": "D", "sheet": chave[0], "linha": chave[1],
-                           "idx": o["input"], "tipoPt": "Ponto Simples"})
+                           "idx": o["input"], "tipoPt": "Ponto Simples",
+                           "so_comando": True})
     pts_tdt = pts + sinteticos
     if cmd_orfaos:
         print(f"comando PURO (sem sinal de status na lista): {len(cmd_orfaos)} "
-              f"-> sinal novo com Input {FILLER_BASE}+")
+              f"-> sinal so de ESCRITA, sem Input Coordinates")
 
     # monta as linhas da TDT
     wb = openpyxl.load_workbook(SKEL)
@@ -1293,7 +1306,13 @@ def main():
             return (dm_alvo, sig_type, med, fases)
         return None
 
-    def _cabe(dm_alvo, sig_type):
+    # Grandezas de TENSAO nao podem ficar num TC. O validador do ADMS:
+    #   "Type: CURRENTTR not in set of allowed reference types {POTENTIALTR,
+    #    BUSBAR, ...} where MEASUREMENT_TYPE in (Voltage, Frequency,
+    #    VoltageAngle, RelativeVoltage)"
+    _MED_TENSAO = {"Voltage", "Frequency", "VoltageAngle", "RelativeVoltage"}
+
+    def _cabe(dm_alvo, sig_type, med=""):
         """(cabe?, motivo). Duas regras, com pesos diferentes:
 
         1) COMPATIBILIDADE DE TIPO (sempre vale). Se a TDT antiga NUNCA poe um
@@ -1309,6 +1328,9 @@ def main():
         if _sf in devmap._GENERICO:
             return False, (f"{dm_alvo} e o rele GENERICO do vao — ele nao "
                            f"recebe sinal; o sinal precisa do rele especifico")
+        if med in _MED_TENSAO and td == "TC":
+            return False, (f"medida de {med} nao pode ficar num TC (CURRENTTR) — "
+                           f"o ADMS so aceita em TP, barra, disjuntor, chave...")
         lim = QUOTA.get((td, sig_type), 0)
         if lim == 0:
             return False, (f"dispositivo do tipo {td} nao carrega sinal "
@@ -1408,7 +1430,7 @@ def main():
                     _g = lambda col: (str(tpl[L(col) - 1]) if L(col) and
                                       L(col) - 1 < len(tpl) else "")
                     _st = _g("Signal Type")
-                    _cb, _por = _cabe(f"{dm_base}{DM_SUFIXO}", _st)
+                    _cb, _por = _cabe(f"{dm_base}{DM_SUFIXO}", _st, _g("Measurement Type"))
                     _pf = _papel_fisico(f"{dm_base}{DM_SUFIXO}", _st,
                                         _g("Measurement Type"), _g("Phases"))
                     if _cb and _pf is not None and _pf in ocupado_fis:
@@ -1425,7 +1447,7 @@ def main():
                         _b2, _n2 = devmap.so_no_modelo(p["nome"], sigla_ef, DM_SUFIXO)
                         _ok2 = False
                         if _b2:
-                            _c2, _p2 = _cabe(f"{_b2}{DM_SUFIXO}", _st)
+                            _c2, _p2 = _cabe(f"{_b2}{DM_SUFIXO}", _st, _g("Measurement Type"))
                             _f2 = _papel_fisico(f"{_b2}{DM_SUFIXO}", _st,
                                                 _g("Measurement Type"), _g("Phases"))
                             if _c2 and (_f2 is None or _f2 not in ocupado_fis):
@@ -1504,7 +1526,14 @@ def main():
                 dm_pendentes.append({"nome": nome, "sigla": p["sigla"], "dm": dm,
                                      "pend": dm_pend, "sheet": p["sheet"],
                                      "linha": p["linha"], "mod": mod, "dev": dev})
-            put("Input Coordinates", final[(p["sheet"], p["linha"])])
+            if p.get("so_comando"):
+                # comando puro: sem Input Coordinates e sem leitura
+                put("Input Coordinates", None)
+                put("Input Data Type", None)
+                if L("Direction"):
+                    put("Direction", "Write")
+            else:
+                put("Input Coordinates", final[(p["sheet"], p["linha"])])
             if p["escala"] not in (None, "", "-") and tipo in ("A", "A/D"):
                 put("Scaling Factor", p["escala"])
             if tipo == "D":
@@ -1556,7 +1585,33 @@ def main():
     # SAT Hughes in model") — ou seja, a importacao da CASCA mexeria na LVA.
     # A lista da CASCA nao traz IP nem Address (estao 'X'), entao nao da pra
     # montar o link certo: limpamos as abas e o time de comunicacao cria depois.
-    for aba in ("DNP3_TCPLinks", "DNP3_UDPLinks", "DNP3_ScanGroups"):
+    # A UTR PRECISA de pelo menos um link ("Number of target elements: 0 outside
+    # of allowed range: (1, 65535)"). O esqueleto traz o link da LVA — se ficar
+    # como esta, a importacao ALTERA a UTR da Lagoa Vermelha. Entao a linha e
+    # reaproveitada, mas reescrita com os dados da CASCA. O IP fica em branco na
+    # lista ("X"), so a porta 20000 e conhecida: o time de comunicacao completa.
+    if "DNP3_TCPLinks" in wb.sheetnames:
+        w = wb["DNP3_TCPLinks"]
+        lab2 = {w.cell(HEADER_ROWS, c).value: c
+                for c in range(1, w.max_column + 1) if w.cell(HEADER_ROWS, c).value}
+        if w.max_row > HEADER_ROWS + 1:
+            w.delete_rows(HEADER_ROWS + 2, w.max_row - HEADER_ROWS - 1)
+        r = HEADER_ROWS + 1
+        def putl(nome, val):
+            c = lab2.get(nome)
+            if c:
+                w.cell(r, c).value = val
+        putl("Communication Link Name", LINK_NOME)
+        putl("Communication Link Alias", LINK_NOME)
+        putl("Communication Link Custom ID", None)      # o ADMS gera
+        putl("Remote Unit", RU)
+        putl("Communication Link AOR Group", AOR)
+        putl("Communication Medium", LINK_MEIO)
+        putl("IP Address", LINK_IP)
+        putl("Port", LINK_PORTA)
+        print(f"DNP3_TCPLinks: link {LINK_NOME!r} (porta {LINK_PORTA}, "
+              f"IP {LINK_IP or 'a definir'}) — a UTR exige ao menos um")
+    for aba in ("DNP3_UDPLinks", "DNP3_ScanGroups"):
         if aba not in wb.sheetnames:
             continue
         w = wb[aba]
@@ -1617,13 +1672,20 @@ def main():
                         cel = ws2.cell(HEADER_ROWS + 1 + i, c + 1, value=row[c])
                         cel._style = copy(st2[c])
                 n[sheet] = len(linhas)
-            # mesma RTU e mesmas abas de config da TDT completa
-            for aba in ("DNP3_RTUs",):
+            # RTU e LINK vem prontos da TDT completa. O link e obrigatorio:
+            # sem ele o ADMS reprova a UTR com "Number of target elements: 0
+            # outside of allowed range: (1, 65535)".
+            for aba in ("DNP3_RTUs", "DNP3_TCPLinks"):
                 o, d = wb[aba], w2[aba]
-                for r in range(HEADER_ROWS + 1, HEADER_ROWS + 2):
+                if d.max_row > HEADER_ROWS:
+                    d.delete_rows(HEADER_ROWS + 1, d.max_row - HEADER_ROWS)
+                for i, r in enumerate(range(HEADER_ROWS + 1, o.max_row + 1)):
+                    if all(o.cell(r, c).value in (None, "")
+                           for c in range(1, o.max_column + 1)):
+                        continue
                     for c in range(1, o.max_column + 1):
-                        d.cell(r, c).value = o.cell(r, c).value
-            for aba in ("DNP3_TCPLinks", "DNP3_UDPLinks", "DNP3_ScanGroups"):
+                        d.cell(HEADER_ROWS + 1 + i, c).value = o.cell(r, c).value
+            for aba in ("DNP3_UDPLinks", "DNP3_ScanGroups"):
                 if aba in w2.sheetnames and w2[aba].max_row > HEADER_ROWS:
                     w2[aba].delete_rows(HEADER_ROWS + 1,
                                         w2[aba].max_row - HEADER_ROWS)
@@ -1643,6 +1705,9 @@ if __name__ == "__main__":
     # python make_casca.py                -> TDT completa + lista + relatorio
     # python make_casca.py --modulo LT2    -> SO aquele vao, num arquivo proprio
     #   (aceita o nome do vao na LISTA, LT2, ou no UNIFILAR, LTPRI)
+    if "--rapido" in sys.argv:
+        globals()["PULAR_LISTA"] = True
+        print("=== --rapido: nao regrava a lista corrigida")
     if "--modulo" in sys.argv:
         MODULO_FILTRO = sys.argv[sys.argv.index("--modulo") + 1].upper()
         alvo = next((k for k, v in devmap.MODULO_EQUIV.items()
