@@ -1249,6 +1249,12 @@ def main():
                 dm_pend = (dm_o if any(k in dm_o for k in
                                        ("fallback", "rele generico", "renumerado"))
                            else "")
+                # o catalogo estrito so conhece o CASCA.xlsx; se o vao so existe
+                # no modelo NOVO (ex.: BT23), procura direto la
+                if dm_base is None and DM_SUFIXO:
+                    _b, _n = devmap.so_no_modelo(p["nome"], p["sigla"], DM_SUFIXO)
+                    if _b:
+                        dm_base, dm_o = _b, _n
                 # RECONCILIA com o modelo REAL: o vao pode estar com outro nome
                 # (a LT KVM tem o disjuntor/reles sob 'LTKVM' e as seccionadoras
                 # sob 'LTMRU'). Aqui trocamos pelo ID que existe de verdade.

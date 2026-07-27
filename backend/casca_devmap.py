@@ -75,6 +75,9 @@ MODULO_EQUIV = {
     # ── barras ──
     "BP69":    ("B138", "MEDIA", "barra de ALTA; no unifilar e a BARRA P1 138 kV"),
     "BP113.8": ("BP23", "MEDIA", "barra de BAIXA 1; no unifilar e a BARRA P3 23 kV"),
+    # BT23 nao existe na TDT antiga — foi criado agora no modelo. E a BARRA T1
+    # 23 kV do unifilar, que corresponde a 2a barra de 13,8 kV da lista.
+    "BP213.8": ("BT23", "MEDIA", "barra de BAIXA 2; no unifilar e a BARRA T1 23 kV"),
     # ── servico auxiliar: o unifilar so tem o TSA-3 ──
     "TSA1": ("TSA3", "BAIXA", "unico TSA do unifilar (TSA-3 45 kVA)"),
     "TSA":  ("TSA3", "BAIXA", "modulo generico das abas RET"),
@@ -118,15 +121,18 @@ _MEDIDA_TP = {"V", "VA", "VB", "VC", "VA_B", "VB_B", "VC_B", "VA_L", "VB_L",
 # Rebaixamento dentro de um vão que EXISTE no unifilar mas não tem aquele
 # dispositivo. Ex.: o TR1 do unifilar entra por seccionadora (89-12), não tem
 # disjuntor de alta — os sinais do "52-4" da lista vão para a seccionadora.
+# BP = barra (BUSBAR) e BT = barra de baixa; sao o mesmo papel para o
+# rebaixamento — o vao BT23 do modelo so tem o sufixo BT.
 _DEGRADA = {
     "COMTAP": ("TR", "DJ", "SEC"), "TAP_REG": ("TR", "DJ", "SEC"),
-    "TR": ("BP", "DJ", "SEC"), "BP": ("TP", "TC", "DJ"),
+    "TR": ("BP", "BT", "DJ", "SEC"), "BP": ("BT", "TP", "TC", "DJ"),
+    "BT": ("BP", "TP", "TC", "DJ"),
     "TC": ("TP", "DJ", "SEC"), "TP": ("TC", "DJ", "SEC"),
-    "SEC": ("DJ", "TR", "BP"), "RET": ("TC", "DJ"),
-    "DJ": ("SEC", "TR", "BP", "RET", "TC"),
+    "SEC": ("DJ", "TR", "BP", "BT"), "RET": ("TC", "DJ"),
+    "DJ": ("SEC", "TR", "BP", "BT", "RET", "TC"),
 }
 # última tentativa: qualquer dispositivo do vão, nesta ordem de preferência
-_ULTIMO_RECURSO = ("DJ", "SEC", "PROT", "TR", "BP", "TC", "TP", "RET")
+_ULTIMO_RECURSO = ("DJ", "SEC", "PROT", "TR", "BP", "BT", "TC", "TP", "RET")
 
 _CACHE = {}
 
@@ -528,6 +534,37 @@ def no_modelo(dm_com_sufixo: str) -> tuple[str | None, str]:
         if (outro, s) in por:
             return por[(outro, s)], f"vao {v} esta como {outro} no modelo"
     return None, f"nao existe no modelo"
+
+
+def so_no_modelo(nome: str, sigla: str, sufixo_id: str = "_NEW"):
+    """Ultimo recurso: procura o dispositivo DIRETO no modelo novo, para os vaos
+    que a TDT antiga nao tinha (ex.: o BT23 — BARRA T1 23 kV — foi criado agora
+    e nao existe no CASCA.xlsx, entao o catalogo estrito nunca o acharia).
+    Devolve (id_real_sem_sufixo, nota) ou (None, motivo)."""
+    por, alias = indice_modelo()
+    if not por:
+        return None, "sem modelo"
+    p = str(nome).split("_")
+    alias_ = p[0] if p else "CAS"
+    mod = p[1] if len(p) > 1 else ""
+    dev = p[2] if len(p) > 2 else mod
+    equiv = MODULO_EQUIV.get(mod)
+    alvo = equiv[0] if equiv else mod
+    suf, _o = sufixo(sigla, dev)
+    for vao in [alvo] + list(alias.get(alvo, [])):
+        for s in (f"{suf}{sufixo_id}",):
+            if (vao, s) in por:
+                dm = por[(vao, s)]
+                base = dm[:-len(sufixo_id)] if dm.endswith(sufixo_id) else dm
+                return base, f"so no modelo novo [{mod}->{vao}]"
+        # rebaixa dentro do vao, so com o que o modelo tem
+        do_vao = {k[1]: v for k, v in por.items() if k[0] == vao}
+        for alt in _DEGRADA.get(suf, ()) + _ULTIMO_RECURSO:
+            if f"{alt}{sufixo_id}" in do_vao:
+                dm = do_vao[f"{alt}{sufixo_id}"]
+                base = dm[:-len(sufixo_id)] if dm.endswith(sufixo_id) else dm
+                return base, f"so no modelo novo, fallback {alt} [{mod}->{vao}]"
+    return None, f"vao {alvo} nao existe nem no modelo novo"
 
 
 def container_da_subestacao() -> tuple[str, str]:
