@@ -40,8 +40,15 @@ ITENS = [
     (DOWN / "PT-MOD-SE-CAS.xml",                 "2-ENTRADAS", False),
     (DOWN / "CASCA.xlsx",                        "2-ENTRADAS", True),
     (DOWN / "TDT_LVA_AL24.xlsx",                 "2-ENTRADAS", False),
-    (DOWN / "erros.csv",                         "2-ENTRADAS", False),
     (DOWN / "Changesets.csv",                    "2-ENTRADAS", False),
+    # retornos do ADMS, em ordem cronologica (o ultimo e o que vale)
+    (DOWN / "erros.csv",                         "2-ENTRADAS/retorno-adms", False),
+    (DOWN / "errpsmapping.csv",                  "2-ENTRADAS/retorno-adms", False),
+    (DOWN / "eros3.csv",                         "2-ENTRADAS/retorno-adms", False),
+    (DOWN / "erros6_UNIDO.csv",                  "2-ENTRADAS/retorno-adms", False),
+    (DOWN / "ERROS10.csv",                       "2-ENTRADAS/retorno-adms", False),
+    (DOWN / "ERROS 100.csv",                     "2-ENTRADAS/retorno-adms", False),
+    (DOWN / "ERROS CS.csv",                      "2-ENTRADAS/retorno-adms", False),
     # ── o que gera ──
     (RAIZ / "backend/make_casca.py",             "3-CODIGO", True),
     (RAIZ / "backend/casca_devmap.py",           "3-CODIGO", True),
@@ -49,7 +56,11 @@ ITENS = [
     (RAIZ / "backend/check_casca.py",            "3-CODIGO", True),
     (RAIZ / "backend/excel_native.py",           "3-CODIGO", True),
     (RAIZ / "backend/tdt_engine.py",             "3-CODIGO", True),
+    (RAIZ / "backend/_extrai_base.py",           "3-CODIGO", False),
     (RAIZ / "backend/data/sigla_index.json",     "3-CODIGO/data", True),
+    # convencao das 27 SEs: sufixo de dispositivo, quota e config de comando
+    (RAIZ / "backend/data/convencao_dm.json",    "3-CODIGO/data", False),
+    (RAIZ / "backend/data/casca_cmd_cfg.json",   "3-CODIGO/data", False),
     # ── contexto do projeto inteiro ──
     (RAIZ / "HANDOFF_COMPLETO.md",               "4-CONTEXTO", False),
     (RAIZ / "TECNICO_COMO_FOI_FEITO.md",         "4-CONTEXTO", False),
@@ -67,21 +78,33 @@ tomadas, as armadilhas ja pagas e o que fazer em seguida.
              - TDT_CASCA_FUTURA.xlsx ........... os que esperam o dispositivo
                ser criado (ver aba 23 do relatorio)
              - TDT_CASCA_UTR_CAS_3.xlsx ........ as duas juntas (completa)
+             - TDT_CASCA_LT2.xlsx .............. so o vao LT PRI, p/ teste
              - RGE ADMS_..._CORRIGIDA.xlsx ..... lista com o INDEX DNP3 arrumado
-             - CASCA_RELATORIO.xlsx ............ 16 abas; comece pela "0-LEIA-ME"
+             - CASCA_RELATORIO.xlsx ............ 24 abas; comece pela
+               "0-O QUE FALTA" e depois a "20-Historico de erros"
 
 2-ENTRADAS/  os arquivos que produziram a entrega
              - RGE ADMS_Lista Pontos Casca.xlsx  fonte dos SINAIS
-             - PT-MOD-SE-CASCA.xml ............. fonte dos DISPOSITIVOS
-             - CASCA.xlsx ...................... TDT atual (convencao de Device Mapping)
+             - PT-MOD-SE-CAS.xml ............... fonte dos DISPOSITIVOS
+               (ja com os _NEW; o PT-MOD-SE-CASCA.xml e o anterior)
+             - CASCA.xlsx ...................... TDT atual (convencao de
+               Device Mapping e de configuracao de comando)
              - TDT_LVA_AL24.xlsx ............... esqueleto de TDT valida
-             - erros.csv ....................... retorno do validador do ADMS
+             - retorno-adms/ ................... os CSV do validador, em ordem;
+               o ultimo (ERROS CS.csv) e o que vale
 
 3-CODIGO/    para regerar:
                  python make_casca.py     (gera os 3 arquivos)
+                 python make_casca.py --rapido    (nao regrava a lista
+                     corrigida — so precisa quando a lista de pontos muda;
+                     e o passo mais lento, ~5300 formulas congeladas)
                  python check_casca.py    (confere; tem que dar OK)
              Precisa de Windows com Excel instalado (pywin32) — a TDT so e
              aceita se for regravada pelo proprio Excel.
+
+             data/convencao_dm.json vem da base completa das 27 SEs
+             (_extrai_base.py). Traz sufixo de dispositivo por sigla, quota
+             por tipo e a configuracao de COMANDO por sigla.
 
 4-CONTEXTO/  documentacao do gerador de TDT como um todo
 
@@ -101,14 +124,29 @@ ESTADO NA HORA DO EMPACOTAMENTO
 LISTA:  2535 linhas de sinal, 0 sem index
         D 0..1904 · A 1..361 · C 1..300 — contiguos, sem duplicata
 TDT:    1282 sinais, 0 nome duplicado, 0 coordenada duplicada
-        654 com dispositivo que JA EXISTE  -> TDT_CASCA_ATUAL.xlsx
-        628 esperando o dispositivo        -> TDT_CASCA_FUTURA.xlsx
+        570 com dispositivo que JA EXISTE  -> TDT_CASCA_ATUAL.xlsx
+        712 esperando o dispositivo        -> TDT_CASCA_FUTURA.xlsx
         0 Device Mapping com tipo errado, 0 "Found multiple"
-COMANDOS: 176/176 resolvidos
+COMANDOS: 176/176 resolvidos, 176/176 com configuracao de saida completa
+LINK:    UTR_CAS_3_Link1 presente nas TRES TDTs (a UTR exige >=1)
+check_casca.py: OK — nenhum problema encontrado
 
 NAO EXISTE sinal sem dispositivo: apontar para a UTR (UTR_CAS_3) tambem e
 recusado pelo ADMS. Por isso a TDT FUTURA carrega o nome do dispositivo que
 PRECISA ser criado — o erro do import vira a lista do que fazer (aba 23).
+
+
+UNICA PENDENCIA QUE NAO DEPENDE DO MODELO
+-----------------------------------------
+O IP do link esta com o PLACEHOLDER 0.0.0.0. A aba "Informacoes" da lista traz
+o IP como "X" — ainda nao definido — e o ADMS nao aceita a celula vazia
+("IP Address cannot be left empty"). O 0.0.0.0 nao e roteavel, entao nao ha
+risco de conflito com equipamento real, mas TEM que ser trocado antes de a UTR
+entrar em operacao. O time de comunicacao informa o definitivo; trocar em
+LINK_IP no 3-CODIGO/make_casca.py e rodar de novo. (A LVA usa 10.7.124.99.)
+
+O resto das pendencias e trabalho NO MODELO do ADMS, listado na aba
+"0-O QUE FALTA" do relatorio.
 """
 
 
