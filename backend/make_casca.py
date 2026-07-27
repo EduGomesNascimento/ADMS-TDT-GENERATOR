@@ -813,6 +813,16 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
          "(dispositivo, grandeza, fase). Quem nao cabe vai para a TDT FUTURA "
          "com o nome do dispositivo que precisaria existir.",
          "RESOLVIDO"],
+        ["22", "Gerador", "Same signal CAS_TR6_TR6_A_87A already mapped on "
+         "device CAS_TR1_TR1_PROT  (17 sinais)",
+         "Quando o rele ESPECIFICO nao existia, eu rebaixava para o rele "
+         "GENERICO do vao (_PROT). So que pickup e alarme do mesmo codigo caem "
+         "no mesmo slot ali, e o ADMS recusa o segundo.",
+         "O rele generico NAO recebe sinal: na TDT atual da CASCA ZERO sinais "
+         "apontam para um _PROT sem codigo — ele e contêiner dos reles "
+         "especificos. Retirado da escada de rebaixamento; quem dependia dele "
+         "vai para a TDT FUTURA pedindo o rele especifico.",
+         "RESOLVIDO"],
         ["19", "Gerador", "Device Mapping apontando para dispositivo que nao "
          "existe (a causa de todo 'Could not find any device')",
          "O Device Mapping saia da convencao da TDT antiga sem ninguem conferir "
@@ -1272,6 +1282,12 @@ def main():
         2) LIMITE NUMERICO (DM_QUOTA_NUMERICA), desligado por padrao.
         """
         td = devmap.tipo_dispositivo(dm_alvo)
+        # o rele GENERICO nunca recebe sinal (0 casos na TDT atual da CASCA)
+        _sf = (dm_alvo.split("_", 3)[-1].replace(DM_SUFIXO, "")
+               if dm_alvo.count("_") > 2 else "")
+        if _sf in devmap._GENERICO:
+            return False, (f"{dm_alvo} e o rele GENERICO do vao — ele nao "
+                           f"recebe sinal; o sinal precisa do rele especifico")
         lim = QUOTA.get((td, sig_type), 0)
         if lim == 0:
             return False, (f"dispositivo do tipo {td} nao carrega sinal "

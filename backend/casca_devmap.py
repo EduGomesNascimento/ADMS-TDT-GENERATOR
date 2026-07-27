@@ -133,7 +133,11 @@ _DEGRADA = {
     "DJ": ("SEC", "TR", "BP", "BT", "RET", "TC"),
 }
 # última tentativa: qualquer dispositivo do vão, nesta ordem de preferência
-_ULTIMO_RECURSO = ("DJ", "SEC", "PROT", "TR", "BP", "BT", "TC", "TP", "RET")
+# O rele GENERICO (_PROT, _P_PROT, _A_PROT) NAO entra: na TDT atual da CASCA
+# ZERO sinais apontam para ele — e contêiner dos reles especificos, nao alvo de
+# sinal. Empilhar pickup e alarme nele era o que sobrava de "already mapped".
+_ULTIMO_RECURSO = ("DJ", "SEC", "TR", "BP", "BT", "TC", "TP", "RET")
+_GENERICO = {"PROT", "P_PROT", "A_PROT"}
 
 _CACHE = {}
 
