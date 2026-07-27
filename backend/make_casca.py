@@ -459,11 +459,15 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
           ["   Dois motivos, os dois OK por enquanto:"],
           ["   a) vaos que a CASCA de hoje NAO tem: AL18 (BC1 e transf. 24-1),"],
           ["      AL24, AL25, AL26, TRF29 (24-2), AL28 (BC2), IB20, BP213.8, TSA2."],
-          ["   b) sinais cujo rele especifico nao existe no modelo (DM_SO_EXATO"],
-          ["      esta LIGADO: em vez de empilhar no disjuntor do vao — o que dava"],
-          ["      'already mapped' — ficam na UTR). Se preferir empilhar no"],
-          ["      disjuntor, desligue DM_SO_EXATO em backend/make_casca.py."],
-          ["   Nos dois casos: quando o dispositivo existir, e so remapear."],
+          ["   b) rele especifico que nao existe no modelo (DM_SO_EXATO ligado:"],
+          ["      em vez de empilhar no disjuntor do vao — o que dava 'already"],
+          ["      mapped' — fica na UTR)."],
+          ["   c) o vao do modelo tem MENOS equipamentos que a lista. Ex.: o"],
+          ["      TR2AT so tem a seccionadora 89-16 e a lista traz 89-20, 89-22"],
+          ["      e 89-24 — as tres viravam o mesmo sinal. O 1o fica no"],
+          ["      dispositivo, os outros vao pra UTR. Criar os equipamentos que"],
+          ["      faltam no vao resolve (o motivo esta escrito na aba 19)."],
+          ["   Nos tres casos: quando o dispositivo existir, e so remapear."],
           [""],
           ["4) CDC / R90 do TR6 e TR7  (erro 9, aba 20) — 4 sinais"],
           ["   O ponto ja existe no dispositivo vindo da UTR IEC antiga. Decidir"],
@@ -695,14 +699,31 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
          "(ex.: 52-22 -> CAS_LTPRI_52-22_DJ_NEW). Sao os 7 IDs da aba 17.",
          "EM ABERTO — dar ID distinto no modelo"],
         ["15", "Import", "Same signal ... already mapped on device ... in same "
-         "mapping action  (109 sinais)",
+         "mapping action",
          "Onde o rele especifico da lista NAO existe no modelo, o gerador "
          "rebaixava varios sinais para o MESMO disjuntor/seccionadora — e o "
          "ADMS so aceita um sinal por papel no dispositivo.",
-         "Rebaixar contraria 'usar o device mapping da antiga'. Opcao: ligar "
-         "DM_SO_EXATO para usar SO o DM exato da CASCA.xlsx (por vao+sigla) e "
-         "mandar o resto pra UTR, em vez de empilhar.",
-         "EM ABERTO — decisao: rebaixar ou UTR"],
+         "DM_SO_EXATO=True: usa SO o DM exato da CASCA.xlsx (por vao+sigla), "
+         "sem rebaixar. O resto vai para a UTR.",
+         "RESOLVIDO"],
+        ["16", "Gerador (bug meu)", "Same signal CAS_TR2AT_TR2AT_51N1 already "
+         "mapped on device CAS_TR2AT_TR2AT_PROT_51N1",
+         "PICKUP (P_) e ALARME (A_) tem dispositivo PROPRIO na CASCA — "
+         "CAS_LTPRI_LTPRI_P_51N1 vai para ..._P_PROT_51N1, nao para "
+         "..._PROT_51N1. Eu mandava os dois para o mesmo rele, e o segundo "
+         "batia de frente com o primeiro.",
+         "casca_devmap.sufixo(): o teste de codigo ANSI passou a vir ANTES do "
+         "atalho pela tabela aprendida, entao P_51N1 -> P_PROT_51N1.",
+         "RESOLVIDO"],
+        ["17", "Modelo x lista", "3 seccionadoras da lista caindo no mesmo "
+         "dispositivo do modelo",
+         "O vao do modelo tem MENOS equipamentos que a lista: o TR2AT so tem a "
+         "seccionadora 89-16, e a lista traz 89-20, 89-22 e 89-24. As tres "
+         "viravam o mesmo sinal de posicao no 89-16.",
+         "O gerador passou a reservar UM papel por dispositivo: o 1o sinal "
+         "fica, os demais vao para a UTR (110 sinais) com o motivo escrito na "
+         "aba 19. Assim eles ENTRAM na TDT em vez de serem recusados.",
+         "CONTORNADO — criar os equipamentos que faltam no vao"],
     ]
     sheet("20-Historico de erros",
           ["#", "Onde", "Mensagem do ADMS / sintoma", "Causa", "Resolucao",
@@ -1109,6 +1130,19 @@ def main():
     ambiguos = devmap.ambiguos_no_modelo()
     dm_ambiguo = []; dm_device = 0
     rpc_rows = []; sem_dm = []
+    # ── evita "Same signal ... was already mapped on device" ────────────────
+    # O ADMS aceita UM sinal por papel em cada dispositivo. Quando o vao do
+    # modelo tem menos equipamentos que a lista (ex.: o TR2AT tem so a
+    # seccionadora 89-16, e a lista traz 89-20, 89-22 e 89-24), varios sinais
+    # cairiam no mesmo dispositivo com o mesmo papel. Aqui o 1o fica e os
+    # demais vao para a UTR.
+    _POSICAO = {"SECC", "SECF", "SECT", "SECG", "SECB", "SELF", "DSEC",
+                "LIBM", "SLIB", "SECD", "DJF1", "DJF2"}
+    ocupado = set()
+
+    def _papel(dm_alvo, sigla):
+        """Chave do 'papel' que o sinal ocupa no dispositivo."""
+        return (dm_alvo, "POSICAO" if sigla in _POSICAO else sigla)
     # Ordinal do Remote Point Custom ID calculado sobre a TDT COMPLETA, na
     # mesma ordem em que as linhas sao escritas. Assim o recorte por --modulo
     # mantem os MESMOS ids da TDT inteira e as duas podem conviver no modelo.
@@ -1157,6 +1191,16 @@ def main():
                 dm_pend = (dm_o if any(k in dm_o for k in
                                        ("fallback", "rele generico", "renumerado"))
                            else "")
+                # papel ja ocupado nesse dispositivo -> vai pra UTR
+                if dm_base is not None:
+                    _k = _papel(dm_base, p["sigla"])
+                    if _k in ocupado:
+                        dm_o = (f"dispositivo {dm_base} ja tem um sinal deste "
+                                f"papel (o vao do modelo tem menos equipamentos "
+                                f"que a lista)")
+                        dm_base = None
+                    else:
+                        ocupado.add(_k)
                 if dm_base is None:
                     sem_dm.append([p["sheet"], p["linha"], p["tipo"], p["sigla"],
                                    p["nome"], dm_o])

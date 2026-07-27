@@ -247,15 +247,20 @@ def sufixo(sig: str, device: str) -> tuple[str, str]:
     for fam, suf in _FAM:
         if sig in fam:
             return suf, "familia"
+    # PICKUP (P_) e ALARME (A_) tem dispositivo PROPRIO na CASCA:
+    #   CAS_LTPRI_LTPRI_P_51N1 -> CAS_LTPRI_LTPRI_P_PROT_51N1
+    #   CAS_LTPRI_LTPRI_A_51N1 -> CAS_LTPRI_LTPRI_A_PROT_51N1
+    # Mandar o pickup para o mesmo PROT_51N1 do trip faz o ADMS recusar com
+    # "Same signal ... was already mapped on device".
     if len(sig) > 2 and sig[:2] in ("P_", "A_"):
         resto = sig[2:]
+        if resto[:1].isdigit():
+            return f"{sig[0]}_PROT_{resto}", "pickup/alarme"
         if resto in tab:
             return tab[resto], "TDT atual (base)"
         for fam, suf in _FAM:
             if resto in fam:
                 return suf, "familia (base)"
-        if resto[:1].isdigit():
-            return f"{sig[0]}_PROT_{resto}", "pickup/alarme"
         return "DJ", "default"
     if sig in _MEDIDA_TC:
         return "TC", "medida"
