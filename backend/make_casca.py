@@ -44,9 +44,12 @@ PULAR_LISTA = False        # --rapido: nao regrava a lista corrigida
 
 # Link de comunicacao da UTR. A aba "Informacoes" da lista so define a porta
 # (20000); o IP esta como "X" — o time de comunicacao preenche depois.
+# O validador do ADMS NAO aceita IP vazio ("IP Address cannot be left empty"),
+# entao entra um PLACEHOLDER nao-roteavel: e obvio que precisa ser trocado e
+# nao arrisca colidir com equipamento real da rede (a LVA usa 10.7.124.99).
 LINK_NOME = "UTR_CAS_3_Link1"
 LINK_MEIO = "SAT Hughes"
-LINK_IP = ""
+LINK_IP = "0.0.0.0"             # PROVISORIO — comunicacao define o IP definitivo
 LINK_PORTA = 20000
 
 # Renomear o VAO no NOME do sinal para o nome do ADMS.
@@ -75,6 +78,64 @@ FALLBACK_SIGLA = {
     "81A": "81", "81P": "FALH", "81F": "FALH", "81C": "FALH",
     "86RM": "86",          # 'REARME 86' — só existe como comando; molde = 86 BLOQUEIO
 }
+
+# ─── Configuração de SAÍDA (comando) ─────────────────────────────────────────
+# A linha-molde vem da sigla, e a maioria das siglas é de STATUS: o molde chega
+# sem nada de saída. Escrever só a Output Coordinates deixa o comando morto e o
+# validador recusa ("Output Data Type cannot be left empty" — os três 86RM).
+# A configuração certa é a que a CASCA já usa hoje, aprendida por sigla da TDT
+# atual (CASCA.xlsx) e guardada em data/casca_cmd_cfg.json.
+CMD_COLS = ["Output Data Type", "Control Codes", "Commanding Mode",
+            "Command Times [s]", "Direction", "Command Timeout [s]",
+            "Scan After Command"]
+# Padrão = a combinação mais frequente da CASCA (trava desliga/liga, 0,25 s).
+CMD_CFG_PADRAO = ["SingleCoord", "LatchOff;LatchOn", "DirectOperate",
+                  "0.25;0.25", "ReadWrite", 35, False]
+CMD_CFG: dict[str, list] = {}
+
+
+def carrega_cmd_cfg() -> dict[str, list]:
+    """Config de saída por sigla. A CASCA manda; o resto vem da base completa.
+
+    A CASCA só comanda 24 siglas, e as que faltam (SECC, DJF1, 25IE, 81U1..5,
+    86RM) existem nas outras 26 SEs — a base completa é a fonte delas.
+    """
+    cache = DATA / "casca_cmd_cfg.json"
+    if cache.exists():
+        cfg = json.loads(cache.read_text(encoding="utf-8"))
+    else:
+        import openpyxl as _op
+        from collections import Counter as _C, defaultdict as _dd
+        wb = _op.load_workbook(devmap.TDT_ATUAL, read_only=True, data_only=True)
+        ws = wb["DNP3_DiscreteSignals"]
+        linhas = list(ws.iter_rows(values_only=True))
+        wb.close()
+        hdr = list(linhas[HEADER_ROWS - 1])
+        ic = {c: (hdr.index(c) if c in hdr else None) for c in CMD_COLS}
+        ioc = hdr.index("Output Coordinates"); inm = hdr.index("Signal Name")
+        por = _dd(_C)
+        for r in linhas[HEADER_ROWS:]:
+            if r[ioc] in (None, ""):
+                continue
+            sig = (r[inm] or "").split("_")[-1]
+            por[sig][tuple(r[ic[c]] if ic[c] is not None else None
+                           for c in CMD_COLS)] += 1
+        cfg = {s: list(c.most_common(1)[0][0]) for s, c in por.items()}
+        cache.write_text(json.dumps(cfg, ensure_ascii=False, indent=0),
+                         encoding="utf-8")
+    n_cas = len(cfg)
+    base = {}
+    _bp = DATA / "convencao_dm.json"
+    if _bp.exists():
+        _b = json.loads(_bp.read_text(encoding="utf-8"))
+        if _b.get("cmd_cols") == CMD_COLS:
+            base = _b.get("cmd_cfg", {})
+    for s, v in base.items():             # a CASCA tem prioridade
+        cfg.setdefault(s, v)
+    print(f"config de comando: {n_cas} siglas da CASCA + "
+          f"{len(cfg) - n_cas} da base completa")
+    return cfg
+
 
 # Índice de ENTRADA de preenchimento para pontos que só existem como COMANDO
 # (o validador do ADMS exige Input Coordinates em todo sinal discreto).
@@ -560,6 +621,12 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
           ["   O ponto ja existe no dispositivo vindo da UTR IEC antiga. Decidir"],
           ["   se o novo entra em outro dispositivo ou espera a UTR velha sair."],
           [""],
+          [f"5) IP DO LINK DE COMUNICACAO — {LINK_NOME}"],
+          [f"   Esta com o placeholder {LINK_IP}. A lista traz o IP como 'X'."],
+          ["   O ADMS nao aceita IP vazio, entao entrou esse provisorio; o time"],
+          ["   de comunicacao precisa informar o definitivo (a LVA usa"],
+          ["   10.7.124.99, porta 20000). Trocar em LINK_IP no make_casca.py."],
+          [""],
           ["=================  COMO CONTINUAR SEMANA QUE VEM  ================="],
           ["  a) No ADMS: renomear os dispositivos da aba 21 com _NEW e dar ID"],
           ["     distinto aos da aba 22."],
@@ -573,7 +640,7 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
           ["10 (Device Mapping sinal a sinal), 2 (de-para de coordenadas)."]]
     sheet("0-O QUE FALTA", ["SE CASCA / UTR_CAS_3 — situacao e pendencias"], P,
           fills=lambda r: (warn if r and str(r[0]).strip()[:2] in
-                           ("1)", "2)", "3)", "4)") else None))
+                           ("1)", "2)", "3)", "4)", "5)") else None))
 
     sheet("0-LEIA-ME",
           ["O PROBLEMA E A SOLUCAO"],
@@ -863,6 +930,57 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
          "DM_SO_EXATO voltou a False (632 sinais em dispositivo real, contra "
          "392 sem rebaixar).",
          "RESOLVIDO"],
+        ["23", "Validacao do modelo", "Type: CURRENTTR not in set of allowed "
+         "reference types  (6 sinais de tensao)",
+         "No rebaixamento, medidas de tensao (VA_B/VB_B/VC_B do LTSCO, V dos "
+         "lados AT/BT dos trafos) acabavam num TC. Tensao/frequencia/angulo so "
+         "podem ficar em TP, barra, chave, disjuntor etc. — nunca num "
+         "transformador de CORRENTE.",
+         "Guarda em _cabe(): Voltage/Frequency/VoltageAngle/RelativeVoltage "
+         "sao recusados quando o alvo e do tipo TC.",
+         "RESOLVIDO"],
+        ["24", "Validacao do modelo", "Number of target elements: 1 outside of "
+         "allowed range: (0, 0) where REMOTEPOINT_DIRECTION = Write  (CDC dos "
+         "trafos)",
+         "Ponto que so existe como COMANDO e de ESCRITA pura, e eu preenchia "
+         "Input Coordinates com um numero alto (9599+) achando que o validador "
+         "exigia entrada em todo discreto. Exige o contrario: Input VAZIO.",
+         "Os sinais sinteticos de comando saem com Input Coordinates e Input "
+         "Data Type vazios e Direction = Write.",
+         "RESOLVIDO"],
+        ["25", "Validacao do modelo", "Number of target elements: 0 outside of "
+         "allowed range: (1, 65535) where type(RTU_PARENTREMOTE) = 0  (UTR)",
+         "Eu esvaziava a aba DNP3_TCPLinks para nao mexer no link da LVA que "
+         "vinha no esqueleto — mas a UTR EXIGE pelo menos um link. Pior: as "
+         "TDTs ATUAL/FUTURA eram montadas de um esqueleto novo e saiam sem "
+         "link nenhum.",
+         "A linha do link e REESCRITA com os dados da CASCA (UTR_CAS_3_Link1, "
+         "SAT Hughes, porta 20000) e as tres TDTs copiam DNP3_RTUs e "
+         "DNP3_TCPLinks do arquivo completo.",
+         "RESOLVIDO"],
+        ["26", "Validacao do modelo", "Output Data Type cannot be left empty  "
+         "(CAS_B138_B138_86RM, CAS_BP23_BP23_86RM, CAS_BT23_BT23_86RM)",
+         "A linha-molde vem da SIGLA, e quase toda sigla da base foi amostrada "
+         "de um sinal de STATUS: chega sem nada de saida. Eu escrevia so a "
+         "Output Coordinates — o comando ficava sem tipo de dado, sem codigo de "
+         "controle e com Direction=Read. Alem dos 3 que o ADMS acusou, outros "
+         "59 (SECC, DJF1, 79, 25IE, 81U1..5) estavam com o comando MORTO pelo "
+         "mesmo motivo, sem serem acusados.",
+         "A configuracao de saida passou a ser aprendida por sigla: primeiro da "
+         "TDT atual da CASCA, depois da base completa das 27 SEs "
+         "(data/convencao_dm.json -> cmd_cfg), e so entao um padrao. Direction "
+         "vira Write (comando puro) ou ReadWrite. check_casca.py agora reprova "
+         "Output Coordinates sem Output Data Type / Control Codes / "
+         "Commanding Mode.",
+         "RESOLVIDO"],
+        ["27", "Validacao do modelo", "IP Address cannot be left empty  "
+         "(UTR_CAS_3_Link1)",
+         "A aba Informacoes da lista traz o IP como 'X' — ainda nao definido — "
+         "e eu deixava a celula vazia. O ADMS nao aceita.",
+         "Entra o placeholder nao-roteavel 0.0.0.0, que e obviamente "
+         "provisorio e nao colide com equipamento real. O time de comunicacao "
+         "troca pelo IP definitivo (a LVA usa 10.7.124.99).",
+         "EM ABERTO — falta o IP definitivo da comunicacao"],
     ]
     sheet("20-Historico de erros",
           ["#", "Onde", "Mensagem do ADMS / sintoma", "Causa", "Resolucao",
@@ -1155,6 +1273,9 @@ def main():
     n_sim = sum(1 for p in pts if p["usado"])
     print(f"lista: {len(pts)} pontos ({n_sim} Utilizado?=SIM, {len(pts) - n_sim} NAO) "
           f"— TODOS recebem coordenada")
+
+    global CMD_CFG
+    CMD_CFG = carrega_cmd_cfg()
 
     idx = json.loads((DATA / "sigla_index.json").read_text(encoding="utf-8"))
     TPL = {"D": idx["DNP3_DiscreteSignals"], "A": idx["DNP3_AnalogSignals"],
@@ -1540,6 +1661,22 @@ def main():
                 out = cmd.get(p["nome"])          # comando casa pelo NOME original
                 if out:
                     put("Output Coordinates", out)
+                    # A linha-molde da sigla e de STATUS na maioria dos casos, entao
+                    # ela vem SEM configuracao de saida. Escrever so a coordenada
+                    # deixa o comando morto e o validador reclama
+                    # "Output Data Type cannot be left empty" (visto nos 86RM).
+                    # A configuracao vem da TDT ATUAL da CASCA, por sigla.
+                    # sigla -> sigla efetiva (P_/A_) -> molde equivalente
+                    # (86RM 'rearme' herda a config do 86) -> padrao
+                    cfg = (CMD_CFG.get(p["sigla"]) or CMD_CFG.get(sigla_ef)
+                           or CMD_CFG.get(FALLBACK_SIGLA.get(p["sigla"], ""))
+                           or CMD_CFG_PADRAO)
+                    for k, v in zip(CMD_COLS, cfg):
+                        if k == "Direction":
+                            continue          # tratado abaixo
+                        if v not in (None, ""):
+                            put(k, v)
+                    put("Direction", "Write" if p.get("so_comando") else "ReadWrite")
                 else:  # sem comando: vira status puro (senao o validador exige Output)
                     for k in ("Output Coordinates", "Output Data Type", "Control Codes",
                               "Command Times [s]", "Commanding Mode"):

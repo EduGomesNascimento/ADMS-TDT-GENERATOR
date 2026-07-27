@@ -1,0 +1,218 @@
+{
+"EST2": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"G3": [
+"SingleCoord",
+"PulseOn;PulseOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"51N": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"G2": [
+"SingleCoord",
+"PulseOn;PulseOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"G1": [
+"SingleCoord",
+"PulseOn;PulseOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"G4": [
+"SingleCoord",
+"PulseOn;PulseOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"79": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"PROT": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"AUTO": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"SGF": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"ALAJ": [
+"SingleCoord",
+"CloseLatchOff;TripLatchOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"APRT": [
+"SingleCoord",
+"TripPulseOn",
+"DirectOperate",
+25,
+"ReadWrite",
+35,
+false
+],
+"CTP-R1": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"Write",
+35,
+false
+],
+"CTP-R3": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"Write",
+35,
+false
+],
+"CTP-R2": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"Write",
+35,
+false
+],
+"B": [
+"SingleCoord",
+"LatchOff;LatchOff",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"MA": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"ReadWrite",
+35,
+false
+],
+"RICC": [
+"SingleCoord",
+"CloseLatchOff",
+"DirectOperate",
+25,
+"Write",
+35,
+false
+],
+"ZERO": [
+"SingleCoord",
+"LatchOff",
+"DirectOperate",
+25,
+"ReadWrite",
+35,
+false
+],
+"BIDIRECIONALBLOQ": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"Write",
+35,
+false
+],
+"BIDIRECIONAL": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"Write",
+35,
+false
+],
+"BIDIRECIONALI=0": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"Write",
+35,
+false
+],
+"RESET": [
+"SingleCoord",
+"LatchOn",
+"DirectOperate",
+0.25,
+"Write",
+35,
+false
+],
+"COGERACAO": [
+"SingleCoord",
+"LatchOff;LatchOn",
+"DirectOperate",
+"0.25;0.25",
+"Write",
+35,
+false
+]
+}

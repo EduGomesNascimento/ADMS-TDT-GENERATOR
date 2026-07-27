@@ -3680,5 +3680,997 @@
   "TC|FaultRecorder": 3,
   "52-7_DJ|MeasuredValue": 7,
   "BC1_3_TC|MeasuredValue": 5
+ },
+ "cmd_cols": [
+  "Output Data Type",
+  "Control Codes",
+  "Commanding Mode",
+  "Command Times [s]",
+  "Direction",
+  "Command Timeout [s]",
+  "Scan After Command"
+ ],
+ "cmd_cfg": {
+  "51N": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "EST2": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "G3": [
+   "SingleCoord",
+   "ClosePulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "G2": [
+   "SingleCoord",
+   "ClosePulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "79": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "PROT": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "AUTO": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "SGF": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "G4": [
+   "SingleCoord",
+   "ClosePulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "G1": [
+   "SingleCoord",
+   "ClosePulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "81": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "DJF1": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "27": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "86BF": [
+   "SingleCoord",
+   "ClosePulseOn",
+   "DirectOperate",
+   0.25,
+   "ReadWrite",
+   30,
+   false
+  ],
+  "DJA1": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "VF": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "SECT": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "CDC": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   0,
+   false
+  ],
+  "SECF": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "R90": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "SECC": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "CTRL": [
+   "MultiCoord",
+   "ClosePulseOn;ClosePulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25;0.25",
+   "Write",
+   30,
+   false
+  ],
+  "NORMAL": [
+   "SingleCoord",
+   "ClosePulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "CHAVE": [
+   "SingleCoord",
+   "ClosePulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "ALTERNATIVO": [
+   "SingleCoord",
+   "ClosePulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "MOD": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "AJST": [
+   "MultiCoord",
+   "LatchOn;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "EST1": [
+   "MultiCoord",
+   "PulseOn;PulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "RBND": [
+   "SingleCoord",
+   "PulseOn",
+   "DirectOperate",
+   0.25,
+   "Write",
+   35,
+   false
+  ],
+  "MA": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "CTP-R1": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "CTP-R3": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "CTP-R2": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "ALAJ": [
+   "SingleCoord",
+   "CloseLatchOff;TripLatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "APRT": [
+   "SingleCoord",
+   "TripPulseOn",
+   "DirectOperate",
+   25,
+   "ReadWrite",
+   35,
+   false
+  ],
+  "B": [
+   "SingleCoord",
+   "LatchOff;LatchOff",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "RICC": [
+   "SingleCoord",
+   "CloseLatchOff",
+   "DirectOperate",
+   25,
+   "Write",
+   35,
+   false
+  ],
+  "ZERO": [
+   "SingleCoord",
+   "LatchOff",
+   "DirectOperate",
+   25,
+   "ReadWrite",
+   35,
+   false
+  ],
+  "BIDIRECIONALBLOQ": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "BIDIRECIONAL": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "BIDIRECIONALI=0": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "RESET": [
+   "SingleCoord",
+   "LatchOn",
+   "DirectOperate",
+   0.25,
+   "Write",
+   35,
+   false
+  ],
+  "COGERACAO": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "2649": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "AJG2": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "PRES": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "MEST": [
+   "SingleCoord",
+   "ClosePulseOn",
+   "DirectOperate",
+   0.25,
+   "ReadWrite",
+   30,
+   false
+  ],
+  "INDI": [
+   "SingleCoord",
+   "ClosePulseOn",
+   "DirectOperate",
+   0.25,
+   "ReadWrite",
+   30,
+   false
+  ],
+  "SECB": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "86": [
+   "SingleCoord",
+   "ClosePulseOn",
+   "AutoSelectWithValue",
+   0.25,
+   "ReadWrite",
+   30,
+   false
+  ],
+  "CMD": [
+   "SingleCoord",
+   "ClosePulseOn",
+   "AutoSelectWithValue",
+   0.25,
+   "ReadWrite",
+   30,
+   false
+  ],
+  "81AJST": [
+   "SingleCoord",
+   "TripPulseOn;TripPulseOn",
+   "DirectOperate",
+   "0;0",
+   "Write",
+   30,
+   false
+  ],
+  "R90E": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "87": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "VF1": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "UNIDIRECIONAL": [
+   "SingleCoord",
+   "LatchOn;LatchOff",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "NEUTRALIZAEMFLUXODIRETO": [
+   "SingleCoord",
+   "LatchOn;LatchOff",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "INVERSO": [
+   "SingleCoord",
+   "LatchOn;LatchOff",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "BLOQUEIAEMDIRETO": [
+   "SingleCoord",
+   "LatchOn;LatchOff",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "COGERACAOTRIFASICA": [
+   "SingleCoord",
+   "LatchOn;LatchOff",
+   "DirectOperate",
+   "0.25;0.25",
+   "Write",
+   35,
+   false
+  ],
+  "REFE": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "VF2": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "CDFL": [
+   "SingleCoord",
+   "ClosePulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "Write",
+   30,
+   false
+  ],
+  "TAP": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "Write",
+   30,
+   false
+  ],
+  "TDS": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "27LT": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "25": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "SECG": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "89-100SECG": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "HLT": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "90VF": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   20,
+   false
+  ],
+  "AJGP": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0;0",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "81F1": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   20,
+   false
+  ],
+  "81F3": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   20,
+   false
+  ],
+  "81F2": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   20,
+   false
+  ],
+  "81F4": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   20,
+   false
+  ],
+  "81F5": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   20,
+   false
+  ],
+  "COMA": [
+   "SingleCoord",
+   "ClosePulseOn",
+   "DirectOperate",
+   0.25,
+   "ReadWrite",
+   30,
+   false
+  ],
+  "CDCO": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0;0",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "43EP": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "BCDC": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "VFAM": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "SHBL": [
+   "SingleCoord",
+   "ClosePulseOn",
+   "DirectOperate",
+   0.25,
+   "ReadWrite",
+   35,
+   false
+  ],
+  "SH": [
+   "MultiCoord",
+   "ClosePulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   35,
+   false
+  ],
+  "AU": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "CARE": [
+   "SingleCoord",
+   "ClosePulseOn",
+   "DirectOperate",
+   0.25,
+   "Write",
+   35,
+   false
+  ],
+  "25IE": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "DSIE": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "81IE1": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "81IE2": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "AJG1": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "DJIE": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "GRPO": [
+   "SingleCoord",
+   "ClosePulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "Write",
+   30,
+   false
+  ],
+  "MNAT": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "SECL": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "51N1": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0;0",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "SECI": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "AutoSelectWithValue",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "AJ12": [
+   "SingleCoord",
+   "ClosePulseOn",
+   "AutoSelectWithValue",
+   0.25,
+   "ReadWrite",
+   30,
+   false
+  ],
+  "AJ21": [
+   "SingleCoord",
+   "ClosePulseOn",
+   "AutoSelectWithValue",
+   0.25,
+   "ReadWrite",
+   30,
+   false
+  ],
+  "59": [
+   "SingleCoord",
+   "LatchOff;LatchOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "81U4": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "81U5": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "81U3": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "81U1": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "81U2": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "61": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   20,
+   false
+  ],
+  "EST": [
+   "SingleCoord",
+   "TripPulseOn;ClosePulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "PARALELO": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0;0",
+   "ReadWrite",
+   30,
+   false
+  ],
+  "5N": [
+   "SingleCoord",
+   "ClosePulseOn;TripPulseOn",
+   "DirectOperate",
+   "0.25;0.25",
+   "ReadWrite",
+   30,
+   false
+  ]
  }
 }

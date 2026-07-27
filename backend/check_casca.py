@@ -142,6 +142,15 @@ def ler_tdt():
             for r in range(HR + 1, w.max_row + 1)
             if any(w.cell(r, c).value not in (None, "")
                    for c in range(1, w.max_column + 1))]
+    # link TCP com os rotulos, p/ conferir campos obrigatorios (IP, porta)
+    out["_LINKS"] = []
+    if "DNP3_TCPLinks" in wb.sheetnames:
+        w = wb["DNP3_TCPLinks"]
+        h = {str(w.cell(HR, c).value or "").strip(): c
+             for c in range(1, w.max_column + 1)}
+        for r in range(HR + 1, w.max_row + 1):
+            if w.cell(r, h.get("Communication Link Name", 1)).value:
+                out["_LINKS"].append({k: w.cell(r, c).value for k, c in h.items()})
     return out
 
 
@@ -197,6 +206,17 @@ def main():
         for l in alheias:
             falha(f"{sn}: linha de OUTRA subestacao ({l[0]!r}) — importar isso "
                   f"alteraria a UTR da LVA")
+    # a UTR exige >=1 link, e o link exige IP e porta preenchidos
+    links = tdt.pop("_LINKS", [])
+    print(f"  links da UTR: {len(links)}")
+    if not links:
+        falha("UTR sem link de comunicacao — o ADMS responde 'Number of target "
+              "elements: 0 outside of allowed range: (1, 65535)'")
+    for l in links:
+        for campo in ("IP Address", "Port"):
+            if str(l.get(campo) or "").strip() == "":
+                falha(f"link {l.get('Communication Link Name')!r} sem {campo} "
+                      f"— '{campo} cannot be left empty'")
     nomes = collections.Counter()
     total = 0
     # AnalogSignals e DiscreteAnalog dividem o espaco de indices analogicos
@@ -218,6 +238,18 @@ def main():
             else:
                 for n in _nums(ic):
                     coords[n] += 1
+            # comando escrito: a configuracao de saida tem que vir junto, senao
+            # "Output Data Type cannot be left empty" e o comando fica morto
+            if oc not in (None, ""):
+                for campo in ("Output Data Type", "Control Codes",
+                              "Commanding Mode"):
+                    if not str(x.get(campo) or "").strip():
+                        falha(f"{sn}: {x.get('Signal Name')} tem Output "
+                              f"Coordinates mas esta sem {campo}")
+                d = str(x.get("Direction") or "")
+                if d not in ("Write", "ReadWrite"):
+                    falha(f"{sn}: {x.get('Signal Name')} comanda mas Direction="
+                          f"{d!r} (esperado Write ou ReadWrite)")
             for campo in ("Device Mapping", "Remote Unit", "Signal AOR Group",
                           "Remote Point Custom ID"):
                 if not str(x.get(campo) or "").strip():

@@ -1005,3 +1005,75 @@ AL24   55   AL25 55   AL26 55                TR7AT  27
 TRF29  55   (transferencia 24-2)             TR6AT  23
 AL28   49   (BC 2)
 ```
+
+## 22. Validação do modelo — os 4 achados que sobraram
+
+O ADMS tem **dois** relatórios diferentes e é fácil confundir:
+
+| relatório | o que checa | exemplo |
+|---|---|---|
+| **mapeamento** | o Device Mapping acha o dispositivo? | *Could not find any device...* |
+| **validação do modelo** | a linha da TDT é internamente válida? | *Output Data Type cannot be left empty* |
+
+Passar no primeiro não garante o segundo. Estes quatro só apareceram depois que
+o mapeamento ficou limpo.
+
+### 1. Tensão num TC (6 sinais)
+
+`Type: CURRENTTR not in set of allowed reference types` — no rebaixamento,
+`VA_B/VB_B/VC_B` do LTSCO e os `V` dos lados AT/BT dos trafos caíam num
+transformador de **corrente**. Voltage, Frequency, VoltageAngle e
+RelativeVoltage só cabem em TP, barra, chave, disjuntor etc.
+Guarda em `_cabe()`.
+
+### 2. Comando puro com Input Coordinates (2 sinais)
+
+`Number of target elements: 1 outside of allowed range: (0, 0) where
+REMOTEPOINT_DIRECTION = Write`.
+
+Eu preenchia Input com um número alto (9599+) achando que todo discreto exigia
+entrada. É o **contrário**: um ponto que só existe como comando é de escrita
+pura e o Input tem que ficar **vazio**. Flag `so_comando`.
+
+### 3. UTR sem link (1)
+
+`Number of target elements: 0 outside of allowed range: (1, 65535)`.
+
+Eu esvaziava `DNP3_TCPLinks` para não mexer no link da LVA que vinha no
+esqueleto — mas a UTR **exige** ≥1 link. Pior: as TDTs ATUAL/FUTURA eram
+montadas de um esqueleto novo e saíam sem link nenhum. Agora a linha é
+reescrita com os dados da CASCA e as três TDTs copiam `DNP3_RTUs` **e**
+`DNP3_TCPLinks` do arquivo completo.
+
+### 4. `Output Data Type cannot be left empty` (3 acusados, 62 reais)
+
+Este é o mais instrutivo. A linha-molde vem da **sigla**, e quase toda sigla do
+`sigla_index.json` foi amostrada de um sinal de **status**: chega sem nada de
+saída. Eu escrevia só a `Output Coordinates`, então o comando ficava sem tipo
+de dado, sem código de controle e com `Direction=Read`.
+
+O ADMS acusou só os três `86RM` (os únicos com `Direction=Write`), mas outros
+**59** — `SECC`, `DJF1`, `79`, `25IE`, `81U1..81U5` — estavam com o comando
+**morto** pelo mesmo motivo, sem serem acusados. Passar na validação não é
+prova de que o comando funciona.
+
+A configuração de saída passou a ser **aprendida por sigla**, nesta ordem:
+
+1. **TDT atual da CASCA** (`CASCA.xlsx`) — 24 siglas, a convenção da própria SE
+2. **base completa das 27 SEs** (`data/convencao_dm.json` → `cmd_cfg`) — cobre
+   as que a CASCA não comanda hoje
+3. **padrão** `CMD_CFG_PADRAO` — a combinação mais frequente da CASCA
+   (`SingleCoord · LatchOff;LatchOn · DirectOperate · 0.25;0.25`)
+
+`Direction` vira `Write` (comando puro) ou `ReadWrite`.
+
+`check_casca.py` agora reprova `Output Coordinates` sem `Output Data Type` /
+`Control Codes` / `Commanding Mode`, e reprova `Direction=Read` com comando.
+
+### Pendência: o IP do link
+
+`IP Address cannot be left empty`. A aba *Informações* da lista traz o IP como
+`X` — ainda não definido. O ADMS não aceita vazio, então entra o placeholder
+não-roteável **`0.0.0.0`**: é obviamente provisório e não colide com
+equipamento real. O time de comunicação troca em `LINK_IP` (a LVA usa
+`10.7.124.99`, porta 20000).
