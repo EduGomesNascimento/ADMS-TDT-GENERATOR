@@ -968,3 +968,40 @@ Dar ID distinto ao segundo de cada par (ex.: `52-22 -> CAS_LTPRI_52-22_DJ_NEW`).
 > Depois de renomear os 23 e desduplicar os 4, roda-se `make_casca.py` e
 > `casca_status.py <novo erros.csv>` — o que sobrar sera so o que esta na UTR
 > (vaos ainda inexistentes) e os 4 sinais de CDC/R90 (erro 9, UTR IEC antiga).
+
+---
+
+## 21. Duas TDTs: ATUAL e FUTURA
+
+`make_casca.py` passou a gerar **três** arquivos, recortes da mesma TDT — mesmas
+coordenadas, mesmos Remote Point Custom ID, mesmo Signal Alias:
+
+| Arquivo | Sinais | O que é |
+|---|---:|---|
+| **`TDT_CASCA_ATUAL.xlsx`** | **654** | Device Mapping que **já existe** no `Cas_Obra`. Importa limpo. **Comece por ela.** |
+| **`TDT_CASCA_FUTURA.xlsx`** | **628** | Device Mapping que ainda **precisa ser criado**. O erro do import é a própria lista do que fazer. |
+| `TDT_CASCA_UTR_CAS_3.xlsx` | 1282 | as duas juntas |
+
+Conferido: soma exata, **0 sobreposição**, e cada linha idêntica à da completa.
+Todo sinal da ATUAL tem dispositivo real; nenhum da FUTURA tem.
+
+Chave `SPLIT_TDT` em `backend/make_casca.py`.
+
+### Por que não dá para "guardar" o sinal sem dispositivo
+
+Já tentei apontar para a UTR (`Device Mapping = UTR_CAS_3`) e o ADMS recusa
+igual: *"Could not find any device that corresponds to UTR_CAS_3"* — a UTR não
+é um dispositivo. A TDT antiga confirma: **0 de 2481 sinais** têm Device Mapping
+vazio. Um sinal só entra quando o dispositivo dele existir.
+
+Por isso a FUTURA leva o **nome canônico** do dispositivo que falta: o erro do
+ADMS passa a dizer exatamente o que criar.
+
+### FUTURA — por vão
+
+```
+AL18  102   (BC 1 + transferencia 24-1)      IB20   34   (interbarras BT)
+AL24   55   AL25 55   AL26 55                TR7AT  27
+TRF29  55   (transferencia 24-2)             TR6AT  23
+AL28   49   (BC 2)
+```

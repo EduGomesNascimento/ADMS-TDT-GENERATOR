@@ -36,6 +36,10 @@ LISTA = Path("C:/Users/egnpo/Downloads/RGE ADMS_Lista Pontos Casca.xlsx")
 SKEL = Path("C:/Users/egnpo/Downloads/TDT_LVA_AL24.xlsx")   # esqueleto c/ DNP3_RTUs
 OUT_TDT = Path("C:/Users/egnpo/Downloads/TDT_CASCA_UTR_CAS_3.xlsx")
 OUT_REL = Path("C:/Users/egnpo/Downloads/CASCA_RELATORIO.xlsx")
+# As duas TDTs separadas por situacao do dispositivo no modelo.
+OUT_ATUAL = Path("C:/Users/egnpo/Downloads/TDT_CASCA_ATUAL.xlsx")
+OUT_FUTURA = Path("C:/Users/egnpo/Downloads/TDT_CASCA_FUTURA.xlsx")
+SPLIT_TDT = True
 DATA = Path(__file__).parent / "data"
 
 # DE-PARA das siglas da lista sem template na base — usa a linha-molde da
@@ -453,6 +457,15 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
 
     # ── PRIMEIRA ABA: o que falta corrigir ──────────────────────────────────
     P = [["ESTA TDT ESTA PRONTA PARA IMPORTAR. O que falta e no MODELO do ADMS."],
+         [""],
+         ["VOCE RECEBE TRES TDTs — todas com as MESMAS coordenadas, os mesmos"],
+         ["Remote Point Custom ID e o mesmo Signal Alias. Mudam so os sinais:"],
+         [f"  TDT_CASCA_ATUAL.xlsx ..... {n_real} sinais cujo dispositivo JA EXISTE"],
+         ["                             no Cas_Obra. IMPORTA LIMPO — comece por ela."],
+         [f"  TDT_CASCA_FUTURA.xlsx .... {len(_linhas) - n_real} sinais cujo dispositivo ainda"],
+         ["                             PRECISA ser criado. Importe depois de criar"],
+         ["                             os dispositivos da aba 23."],
+         [f"  TDT_CASCA_UTR_CAS_3.xlsx . as {len(_linhas)} juntas (a completa)."],
          [""],
          ["JA FUNCIONA (nao mexer)"],
          [f"  - {len(_linhas)} sinais na TDT, coordenadas todas unicas e conferidas"],
@@ -1192,6 +1205,8 @@ def main():
     plano = [("DNP3_DiscreteSignals", "D"), ("DNP3_AnalogSignals", "A"),
              ("DNP3_DiscreteAnalog", "A/D")]
     gerados = defaultdict(int); pulados = []; usou_fallback = []
+    # linhas separadas por situacao do dispositivo, para gerar as 2 TDTs
+    split_rows = defaultdict(lambda: {"atual": [], "futura": []})
     dm_rows = []; dm_origem = Counter(); dm_pendentes = []
     # O Casca_Obra é CÓPIA da CASCA: os dispositivos clonados herdaram o MESMO
     # "ID de Mapeamento SCADA" dos originais, então o ADMS acha DOIS candidatos
@@ -1386,6 +1401,8 @@ def main():
                         if c and c - 1 < len(ref):
                             row[c - 1] = ref[c - 1]
             rows.append(row)
+            _existe = f"{dm_base}{DM_SUFIXO}" in devmap.modelo_new()[0]
+            split_rows[sheet]["atual" if _existe else "futura"].append(row)
         for i, row in enumerate(rows):
             for c in range(ncol):
                 cell = ws.cell(HEADER_ROWS + 1 + i, c + 1, value=row[c])
@@ -1456,6 +1473,49 @@ def main():
           f"pulados (sem template): {len(pulados)}")
     for p in pulados[:20]:
         print(f"   PULADO {p['sheet']}!L{p['linha']} {p['tipo']} {p['sigla']} {p['nome']}")
+
+    # ── as DUAS TDTs: o que ja mapeia hoje x o que espera o modelo crescer ──
+    # Sao recortes da MESMA TDT (mesmas coordenadas, mesmos Remote Point Custom
+    # ID, mesmo Signal Alias), so que separados pela situacao do dispositivo:
+    #   ATUAL   -> Device Mapping que JA EXISTE no Cas_Obra: importa limpo
+    #   FUTURA  -> Device Mapping que ainda PRECISA ser criado; o erro do import
+    #              e a propria lista do que fazer (ver abas 19 e 23)
+    if SPLIT_TDT:
+        for qual, nome_arq in (("atual", OUT_ATUAL), ("futura", OUT_FUTURA)):
+            w2 = openpyxl.load_workbook(SKEL)
+            n = {}
+            for sheet, _tipo in plano:
+                ws2 = w2[sheet]
+                ncol2 = ws2.max_column
+                st2 = [copy(ws2.cell(HEADER_ROWS + 1, c)._style)
+                       for c in range(1, ncol2 + 1)]
+                if ws2.max_row > HEADER_ROWS:
+                    ws2.delete_rows(HEADER_ROWS + 1, ws2.max_row - HEADER_ROWS)
+                linhas = split_rows[sheet][qual]
+                for i, row in enumerate(linhas):
+                    for c in range(ncol2):
+                        cel = ws2.cell(HEADER_ROWS + 1 + i, c + 1, value=row[c])
+                        cel._style = copy(st2[c])
+                n[sheet] = len(linhas)
+            # mesma RTU e mesmas abas de config da TDT completa
+            for aba in ("DNP3_RTUs",):
+                o, d = wb[aba], w2[aba]
+                for r in range(HEADER_ROWS + 1, HEADER_ROWS + 2):
+                    for c in range(1, o.max_column + 1):
+                        d.cell(r, c).value = o.cell(r, c).value
+            for aba in ("DNP3_TCPLinks", "DNP3_UDPLinks", "DNP3_ScanGroups"):
+                if aba in w2.sheetnames and w2[aba].max_row > HEADER_ROWS:
+                    w2[aba].delete_rows(HEADER_ROWS + 1,
+                                        w2[aba].max_row - HEADER_ROWS)
+            b2 = io.BytesIO(); w2.save(b2)
+            d2 = excel_native.resave_native(b2.getvalue())
+            alvo = nome_arq
+            try:
+                alvo.write_bytes(d2)
+            except PermissionError:
+                alvo = nome_arq.with_name(nome_arq.stem + "_NOVA.xlsx")
+                alvo.write_bytes(d2)
+            print(f"TDT {qual.upper():<7} {alvo.name:<34} {sum(n.values()):>5} sinais  {n}")
 
 
 if __name__ == "__main__":

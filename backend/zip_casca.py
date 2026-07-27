@@ -28,6 +28,8 @@ def _atual(base: str):
 ITENS = [
     # ── o que se entrega ──
     (*_atual("TDT_CASCA_UTR_CAS_3"),                          "1-ENTREGA", True),
+    (DOWN / "TDT_CASCA_ATUAL.xlsx",                          "1-ENTREGA", False),
+    (DOWN / "TDT_CASCA_FUTURA.xlsx",                         "1-ENTREGA", False),
     (DOWN / "TDT_CASCA_LT2.xlsx",                            "1-ENTREGA", False),
     (*_atual("RGE ADMS_Lista Pontos Casca_CORRIGIDA"),       "1-ENTREGA", False),
     (DOWN / "CASCA_RELATORIO.xlsx",                          "1-ENTREGA", True),
@@ -60,7 +62,11 @@ Comece por CASCA_HANDOFF.md — ele explica tudo: a regra do projeto, as decisoe
 tomadas, as armadilhas ja pagas e o que fazer em seguida.
 
 1-ENTREGA/   o que se importa no ADMS e o relatorio que explica
-             - TDT_CASCA_UTR_CAS_3.xlsx ........ A TDT (1282 sinais)
+             - TDT_CASCA_ATUAL.xlsx ............ so os sinais cujo dispositivo
+               JA EXISTE no Cas_Obra. Importa limpo. COMECE POR ELA.
+             - TDT_CASCA_FUTURA.xlsx ........... os que esperam o dispositivo
+               ser criado (ver aba 23 do relatorio)
+             - TDT_CASCA_UTR_CAS_3.xlsx ........ as duas juntas (completa)
              - RGE ADMS_..._CORRIGIDA.xlsx ..... lista com o INDEX DNP3 arrumado
              - CASCA_RELATORIO.xlsx ............ 16 abas; comece pela "0-LEIA-ME"
 
@@ -95,9 +101,14 @@ ESTADO NA HORA DO EMPACOTAMENTO
 LISTA:  2535 linhas de sinal, 0 sem index
         D 0..1904 · A 1..361 · C 1..300 — contiguos, sem duplicata
 TDT:    1282 sinais, 0 nome duplicado, 0 coordenada duplicada
-        858 mapeiam no unifilar (331 com dispositivo rebaixado)
-        424 sem dispositivo -> ver aba 13 do relatorio
+        654 com dispositivo que JA EXISTE  -> TDT_CASCA_ATUAL.xlsx
+        628 esperando o dispositivo        -> TDT_CASCA_FUTURA.xlsx
+        0 Device Mapping com tipo errado, 0 "Found multiple"
 COMANDOS: 176/176 resolvidos
+
+NAO EXISTE sinal sem dispositivo: apontar para a UTR (UTR_CAS_3) tambem e
+recusado pelo ADMS. Por isso a TDT FUTURA carrega o nome do dispositivo que
+PRECISA ser criado — o erro do import vira a lista do que fazer (aba 23).
 """
 
 
