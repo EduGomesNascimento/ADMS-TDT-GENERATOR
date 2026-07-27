@@ -793,6 +793,26 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
          "alias com >=5 sinais e >=60% de dominancia — senao entravam pares que "
          "sao mero fallback (TR1BT->TR1 com 21%, AL13->AL12 com 2%).",
          "RESOLVIDO"],
+        ["20", "Gerador (bug meu)", "Same signal CAS_TR7AT_TR7AT_A_51N1 "
+         "already mapped on device CAS_TR2AT_TR2AT_PROT_51N1  (39 sinais)",
+         "PICKUP e ALARME aparecem no NOME (CAS_TR7AT_TR7AT_P_51N1), mas a "
+         "coluna SIGLA da lista traz so '51N1'. Eu lia a coluna, entao P_ e A_ "
+         "iam para o MESMO rele. A CASCA tem dispositivo proprio para cada um: "
+         "..._P_PROT_51N1 e ..._A_PROT_51N1.",
+         "A sigla EFETIVA passou a ser lida do nome: quando a 4a parte e 'P' ou "
+         "'A', vale P_{sigla} / A_{sigla}.",
+         "RESOLVIDO"],
+        ["21", "Modelo x lista", "3 seccionadoras da lista no mesmo dispositivo "
+         "e VB_B x VB_L no mesmo TP  (20 sinais)",
+         "Um sinal de posicao (SwitchStatus) por chave e um valor por (grandeza, "
+         "fase) no TC/TP. O TR2AT tem so a seccionadora 89-16 e a lista traz "
+         "89-20/89-22/89-24; e a lista tem tensao de BARRA e de LINHA na mesma "
+         "fase, mas o TP so carrega uma.",
+         "Guarda de PAPEL FISICO: SwitchStatus = 1 por dispositivo (64 de 66 "
+         "dispositivos da TDT antiga tem exatamente 1); MeasuredValue = 1 por "
+         "(dispositivo, grandeza, fase). Quem nao cabe vai para a TDT FUTURA "
+         "com o nome do dispositivo que precisaria existir.",
+         "RESOLVIDO"],
         ["19", "Gerador", "Device Mapping apontando para dispositivo que nao "
          "existe (a causa de todo 'Could not find any device')",
          "O Device Mapping saia da convencao da TDT antiga sem ninguem conferir "
@@ -1226,6 +1246,22 @@ def main():
     QUOTA = devmap.quota_por_tipo()
     usado_dm = Counter()
 
+    # Papel FISICO unico no dispositivo, alem da compatibilidade de tipo:
+    #   SwitchStatus  -> uma chave tem UMA posicao (64 de 66 dispositivos da TDT
+    #                    antiga tem exatamente 1; as 2 excecoes sao os IDs
+    #                    duplicados ja conhecidos)
+    #   MeasuredValue -> um TC/TP mede UM valor por (grandeza, fase); era o que
+    #                    fazia VB_B (tensao barra) e VB_L (tensao linha) baterem
+    _UNICO = {"SwitchStatus"}
+    ocupado_fis = set()
+
+    def _papel_fisico(dm_alvo, sig_type, med, fases):
+        if sig_type in _UNICO:
+            return (dm_alvo, sig_type)
+        if sig_type == "MeasuredValue":
+            return (dm_alvo, sig_type, med, fases)
+        return None
+
     def _cabe(dm_alvo, sig_type):
         """(cabe?, motivo). Duas regras, com pesos diferentes:
 
@@ -1284,8 +1320,16 @@ def main():
             _pp = p["nome"].split("_")            # device REAL, p/ o Device Mapping
             alias = _pp[0]; mod = _pp[1] if len(_pp) > 1 else ""
             dev = _pp[2] if len(_pp) > 2 else ""
+            # PICKUP e ALARME aparecem no NOME (CAS_TR7AT_TR7AT_P_51N1), nao na
+            # coluna SIGLA da lista (que traz so '51N1'). Sem isso os dois vao
+            # para o MESMO rele e o ADMS recusa o segundo. A CASCA tem
+            # dispositivo proprio: ..._P_PROT_51N1 e ..._A_PROT_51N1.
+            sigla_ef = p["sigla"]
+            if len(_pp) > 4 and _pp[3] in ("P", "A"):
+                sigla_ef = f'{_pp[3]}_{p["sigla"]}'
+
             if DM_ESTRITO:
-                dm_base, dm_o = devmap.resolver_estrito(p["nome"], p["sigla"])
+                dm_base, dm_o = devmap.resolver_estrito(p["nome"], sigla_ef)
                 # sem rebaixamento: so o DM exato/renumerado da CASCA.xlsx
                 if DM_SO_EXATO and dm_base is not None and any(
                         k in dm_o for k in ("fallback", "rele generico")):
@@ -1297,7 +1341,7 @@ def main():
                 # o catalogo estrito so conhece o CASCA.xlsx; se o vao so existe
                 # no modelo NOVO (ex.: BT23), procura direto la
                 if dm_base is None and DM_SUFIXO:
-                    _b, _n = devmap.so_no_modelo(p["nome"], p["sigla"], DM_SUFIXO)
+                    _b, _n = devmap.so_no_modelo(p["nome"], sigla_ef, DM_SUFIXO)
                     if _b:
                         dm_base, dm_o = _b, _n
                 # RECONCILIA com o modelo REAL: o vao pode estar com outro nome
@@ -1313,15 +1357,26 @@ def main():
                             dm_o = f"{dm_o} + {_nota}"
                 # o dispositivo aceita esse Signal Type?
                 if dm_base is not None:
-                    _st = str(tpl[L("Signal Type") - 1]) if L("Signal Type") else ""
+                    _g = lambda col: (str(tpl[L(col) - 1]) if L(col) and
+                                      L(col) - 1 < len(tpl) else "")
+                    _st = _g("Signal Type")
                     _cb, _por = _cabe(f"{dm_base}{DM_SUFIXO}", _st)
+                    _pf = _papel_fisico(f"{dm_base}{DM_SUFIXO}", _st,
+                                        _g("Measurement Type"), _g("Phases"))
+                    if _cb and _pf is not None and _pf in ocupado_fis:
+                        _cb, _por = False, (f"{dm_base}{DM_SUFIXO} ja tem um sinal "
+                                            f"'{_st}' neste papel (uma chave tem uma "
+                                            f"posicao; um TC/TP mede um valor por "
+                                            f"grandeza e fase)")
                     if not _cb:
                         dm_base, dm_o = None, _por
                     else:
                         usado_dm[(f"{dm_base}{DM_SUFIXO}", _st)] += 1
+                        if _pf is not None:
+                            ocupado_fis.add(_pf)
                 if dm_base is None:
                     # nome CANONICO: o dispositivo que este sinal PRECISARIA
-                    _suf, _ = devmap.sufixo(p["sigla"], dev)
+                    _suf, _ = devmap.sufixo(sigla_ef, dev)
                     _canon = f"{alias}_{mod}_{dev}_{_suf}"
                     sem_dm.append([p["sheet"], p["linha"], p["tipo"], p["sigla"],
                                    p["nome"], f"{_canon}{DM_SUFIXO}", dm_o])
