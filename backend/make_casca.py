@@ -1600,6 +1600,8 @@ if __name__ == "__main__":
         globals()["OUT_TDT"] = OUT_TDT.with_name(f"TDT_CASCA_{alvo}.xlsx")
         globals()["OUT_REL"] = OUT_REL.with_name(f"CASCA_RELATORIO_{alvo}.xlsx")
         globals()["SO_TDT"] = True
+        # o recorte por vao NAO regrava as TDTs ATUAL/FUTURA da subestacao
+        globals()["SPLIT_TDT"] = False
         print(f"=== SO O VAO {alvo}"
               + (f" (LT PRI / {MODULO_FILTRO} no unifilar)" if alvo != MODULO_FILTRO else ""))
     main()
