@@ -243,17 +243,35 @@ def _aprender_siglas():
                 if dm.startswith(pref):
                     per["_".join(p[3:])][dm[len(pref):]] += 1
         wb.close()
-    _CACHE["sig"] = {s: c.most_common(1)[0][0] for s, c in per.items()}
+    _CACHE["sig"] = {s: c.most_common(1)[0] for s, c in per.items()}  # (sufixo, n)
     return _CACHE["sig"]
 
 
 def sufixo(sig: str, device: str) -> tuple[str, str]:
+    """Tipo de dispositivo que leva esta sigla.
+
+    Ordem das fontes, da mais forte para a mais fraca:
+      1) TDT atual da CASCA, com PELO MENOS 2 ocorrencias — convencao local
+      2) familia conhecida (medida, trafo, seccionadora, religador)
+      3) BASE COMPLETA (27 subestacoes) — 2692 siglas
+      4) TDT da CASCA com 1 ocorrencia so
+      5) pickup/alarme, medida, tipo do equipamento, codigo ANSI
+    O passo 4 vem DEPOIS da base de proposito: uma amostra unica da CASCA nao
+    deve derrubar a convencao de 27 subestacoes. Foi o que acontecia com o
+    '81' — a CASCA tem UM caso (CAS_LTPRI_LTPRI_81 -> PROT_81SU) e a base
+    inteira diz PROT_81, que e o rele que existe no modelo.
+    """
     tab = _aprender_siglas()
-    if sig in tab:
-        return tab[sig], "TDT atual"
+    base = convencao_base()["sigla_sufixo"]
+    if sig in tab and tab[sig][1] >= 2:
+        return tab[sig][0], "TDT atual"
     for fam, suf in _FAM:
         if sig in fam:
             return suf, "familia"
+    if sig in base:
+        return base[sig], "base completa"
+    if sig in tab:
+        return tab[sig][0], "TDT atual (1 caso)"
     # PICKUP (P_) e ALARME (A_) tem dispositivo PROPRIO na CASCA:
     #   CAS_LTPRI_LTPRI_P_51N1 -> CAS_LTPRI_LTPRI_P_PROT_51N1
     #   CAS_LTPRI_LTPRI_A_51N1 -> CAS_LTPRI_LTPRI_A_PROT_51N1
@@ -264,10 +282,12 @@ def sufixo(sig: str, device: str) -> tuple[str, str]:
         if resto[:1].isdigit():
             return f"{sig[0]}_PROT_{resto}", "pickup/alarme"
         if resto in tab:
-            return tab[resto], "TDT atual (base)"
+            return tab[resto][0], "TDT atual (base)"
         for fam, suf in _FAM:
             if resto in fam:
                 return suf, "familia (base)"
+        if resto in base:
+            return base[resto], "base completa (base)"
         return "DJ", "default"
     if sig in _MEDIDA_TC:
         return "TC", "medida"

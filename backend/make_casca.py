@@ -1369,8 +1369,22 @@ def main():
                                             f"posicao; um TC/TP mede um valor por "
                                             f"grandeza e fase)")
                     if not _cb:
-                        dm_base, dm_o = None, _por
-                    else:
+                        # o alvo que o rebaixamento escolheu nao serve. Antes de
+                        # desistir, tenta o dispositivo IDEAL do sinal direto no
+                        # modelo — o 81 do AL13 e assim: o rebaixamento manda pro
+                        # disjuntor (que nao aceita Enabled), mas o modelo TEM o
+                        # CAS_AL13_52-3_PROT_81_NEW.
+                        _b2, _n2 = devmap.so_no_modelo(p["nome"], sigla_ef, DM_SUFIXO)
+                        _ok2 = False
+                        if _b2:
+                            _c2, _p2 = _cabe(f"{_b2}{DM_SUFIXO}", _st)
+                            _f2 = _papel_fisico(f"{_b2}{DM_SUFIXO}", _st,
+                                                _g("Measurement Type"), _g("Phases"))
+                            if _c2 and (_f2 is None or _f2 not in ocupado_fis):
+                                dm_base, dm_o, _pf, _ok2 = _b2, _n2, _f2, True
+                        if not _ok2:
+                            dm_base, dm_o = None, _por
+                    if dm_base is not None:
                         usado_dm[(f"{dm_base}{DM_SUFIXO}", _st)] += 1
                         if _pf is not None:
                             ocupado_fis.add(_pf)
