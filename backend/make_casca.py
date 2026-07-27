@@ -1340,8 +1340,19 @@ def main():
         for p in pts_tdt:
             if p["tipo"] != tipo or not p["usado"]:
                 continue
-            if MODULO_FILTRO and p["nome"].split("_")[1].upper() != MODULO_FILTRO:
-                continue
+            if MODULO_FILTRO:
+                _v = p["nome"].split("_")[1].upper()
+                # com NOME_VAO_DO_MODELO o nome ja vem renomeado (LT2 -> LTPRI),
+                # entao aceita o nome da lista E o do modelo
+                _eqv = {MODULO_FILTRO}
+                _e = devmap.MODULO_EQUIV.get(MODULO_FILTRO)
+                if _e:
+                    _eqv.add(_e[0].upper())
+                for _k, _val in devmap.MODULO_EQUIV.items():
+                    if _val[0].upper() == MODULO_FILTRO:
+                        _eqv.add(_k.upper())
+                if _v not in _eqv:
+                    continue
             tpl = TPL[tipo].get(p["sigla"])
             if not tpl:
                 alt = FALLBACK_SIGLA.get(p["sigla"])
