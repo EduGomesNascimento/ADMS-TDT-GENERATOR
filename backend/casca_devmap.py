@@ -670,6 +670,32 @@ def tipo_dispositivo(dm: str) -> str:
     return s.replace("_NEW", "") or "?"
 
 
+def vao_canonico(mod: str, suf: str) -> str:
+    """Nome do vao a usar quando o dispositivo AINDA NAO EXISTE.
+
+    "os nomes sao fidedignos a subestacao no ambiente ADMS": o dispositivo novo
+    tem que nascer com o nome do MODELO, nao o da lista — TR1/TR2 e nao TR6/TR7,
+    LTSCO/LTPRI/LTKVM e nao LT1/LT2/LT3.
+
+    Quando o vao tem DOIS nomes no modelo (a LT KVM guarda as seccionadoras sob
+    'LTMRU' e o disjuntor/reles sob 'LTKVM'), escolhe o que ja tem dispositivo
+    da MESMA familia; empatou, o que tem mais dispositivos.
+    """
+    equiv = MODULO_EQUIV.get(mod)
+    alvo = equiv[0] if equiv else mod
+    por, alias = indice_modelo()
+    cands = [alvo] + list(alias.get(alvo, []))
+    if len(cands) == 1 or not por:
+        return alvo
+    fam = "PROT" if suf.startswith(("PROT", "P_PROT", "A_PROT")) else suf
+    def _peso(v):
+        mesmos = sum(1 for (vv, ss) in por
+                     if vv == v and (ss.startswith("PROT") if fam == "PROT"
+                                     else ss.startswith(fam)))
+        return (mesmos, sum(1 for (vv, _s) in por if vv == v))
+    return max(cands, key=_peso)
+
+
 def container_da_subestacao() -> tuple[str, str]:
     """(nome, custom id) da SUBSTATION do modelo — é ela que o campo Container
     da aba DNP3_RTUs referencia (no esqueleto da LVA era 'LAGOA VERMELHA 1').

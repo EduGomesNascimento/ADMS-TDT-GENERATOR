@@ -40,6 +40,16 @@ OUT_REL = Path("C:/Users/egnpo/Downloads/CASCA_RELATORIO.xlsx")
 OUT_ATUAL = Path("C:/Users/egnpo/Downloads/TDT_CASCA_ATUAL.xlsx")
 OUT_FUTURA = Path("C:/Users/egnpo/Downloads/TDT_CASCA_FUTURA.xlsx")
 SPLIT_TDT = True
+
+# Renomear o VAO no NOME do sinal para o nome do ADMS.
+#   "os nomes sao fidedignos a subestacao no ambiente ADMS"
+# A lista usa o numero do MODULO (aba "TR 1" tem MODULO=6 -> CAS_TR6_...), mas
+# a subestacao chama de TR1. Com isso ligado o sinal vira CAS_TR1_TR1_TOD.
+# Vale para todos os vaos com equivalencia: LT1->LTSCO, BP69->B138 etc.
+# ATENCAO: o nome e a chave do sinal no ADMS. Se ja houver sinais importados
+# com o nome antigo, eles ficam orfaos e os novos entram ao lado. Desligar
+# volta ao nome da lista.
+NOME_VAO_DO_MODELO = True
 DATA = Path(__file__).parent / "data"
 
 # DE-PARA das siglas da lista sem template na base — usa a linha-molde da
@@ -197,6 +207,17 @@ def read_lista():
             nome_orig = nome
             if nome and not nome.startswith(f"{ALIAS}_"):
                 nome = "_".join([ALIAS] + nome.split("_")[1:])
+            # vao com o nome do ADMS (TR6 -> TR1, LT1 -> LTSCO, ...)
+            if NOME_VAO_DO_MODELO and nome:
+                _q = nome.split("_")
+                _eq = devmap.MODULO_EQUIV.get(_q[1]) if len(_q) > 1 else None
+                if _eq:
+                    _v = _eq[0]
+                    # CAS_TR6_TR6_TOD -> CAS_TR1_TR1_TOD (o device repete o vao)
+                    if len(_q) > 2 and _q[2] == _q[1]:
+                        _q[2] = _v
+                    _q[1] = _v
+                    nome = "_".join(_q)
             pts.append({
                 "sheet": sn, "linha": ri,
                 "usado": (not reserva
@@ -1407,7 +1428,10 @@ def main():
                 if dm_base is None:
                     # nome CANONICO: o dispositivo que este sinal PRECISARIA
                     _suf, _ = devmap.sufixo(sigla_ef, dev)
-                    _canon = f"{alias}_{mod}_{dev}_{_suf}"
+                    # o dispositivo novo nasce com o nome do MODELO (TR1/TR2,
+                    # LTSCO/LTPRI/LTKVM), nao com o da lista (TR6/TR7, LT1..LT3)
+                    _vao = devmap.vao_canonico(mod, _suf)
+                    _canon = f"{alias}_{_vao}_{dev}_{_suf}"
                     sem_dm.append([p["sheet"], p["linha"], p["tipo"], p["sigla"],
                                    p["nome"], f"{_canon}{DM_SUFIXO}", dm_o])
                     if DM_SEM_DISPOSITIVO == "fora":

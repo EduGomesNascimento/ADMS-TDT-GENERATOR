@@ -29,6 +29,26 @@ RU, AOR, CONT = "UTR_CAS_3", "CAS Trans", "Cas_Obra"
 ALIAS = "CAS"
 
 
+try:
+    import casca_devmap as _dv
+    _EQ = {k: v[0] for k, v in _dv.MODULO_EQUIV.items()}
+except Exception:                                            # noqa: BLE001
+    _EQ = {}
+
+
+def _norm_vao(nome: str) -> str:
+    """O gerador troca o vao do NOME pelo nome do ADMS (TR6 -> TR1, LT1 ->
+    LTSCO). A conferencia faz o mesmo, senao acusa 'ausente na TDT' de mentira."""
+    q = nome.split("_")
+    if len(q) > 1 and q[1] in _EQ:
+        v = _EQ[q[1]]
+        if len(q) > 2 and q[2] == q[1]:
+            q[2] = v
+        q[1] = v
+        return "_".join(q)
+    return nome
+
+
 def _norm_alias(nome: str) -> str:
     """A lista tem 4 linhas com o alias de OUTRA SE (IMA_...). O gerador troca
     para CAS_ ao montar a TDT — aqui a conferencia faz o mesmo, senao acusa
@@ -78,7 +98,7 @@ def ler_lista():
             pts.append({
                 "sheet": sn, "linha": r, "tipo": tipo,
                 "sigla": str(gv("SIGLA SINAL") or "").strip(),
-                "nome": _norm_alias(str(gv("NOME") or "").strip()),
+                "nome": _norm_vao(_norm_alias(str(gv("NOME") or "").strip())),
                 "idx": gv("INDEX DNP3"),
                 "desc": str(gv("DESCRIÇÃO DO PONTO") or "").strip(),
                 "escala": gv("Escala"),
