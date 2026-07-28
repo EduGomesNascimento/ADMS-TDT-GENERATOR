@@ -183,10 +183,18 @@ def main():
     for col, w in zip("ABCDE", (36, 9, 10, 6, 28)):
         ws.column_dimensions[col].width = w
 
-    wb.save(OUT)
+    # se o arquivo estiver aberto no Excel, grava ao lado como _NOVA
+    alvo = OUT
+    try:
+        wb.save(alvo)
+    except PermissionError:
+        alvo = OUT.with_name(OUT.stem + "_NOVA.xlsx")
+        wb.save(alvo)
+        print(f"ATENCAO: {OUT.name} estava aberto no Excel — gravado como "
+              f"{alvo.name}")
     # resave_native trabalha com BYTES, nao com caminho
-    OUT.write_bytes(excel_native.resave_native(OUT.read_bytes()))
-    print(f"{OUT.name}: {len(sinais)} sinais, {len(por)} dispositivos")
+    alvo.write_bytes(excel_native.resave_native(alvo.read_bytes()))
+    print(f"{alvo.name}: {len(sinais)} sinais, {len(por)} dispositivos")
     for k in "ABCDEZ":
         if c[k]:
             print(f"  {k}  {c[k]:4} sinais  {ACAO[k][0]}")

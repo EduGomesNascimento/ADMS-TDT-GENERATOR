@@ -17,12 +17,25 @@ from pathlib import Path
 import openpyxl
 
 D = Path("C:/Users/egnpo/Downloads")
-LISTA = D / "RGE ADMS_Lista Pontos Casca_CORRIGIDA.xlsx"
-TDT = D / "TDT_CASCA_UTR_CAS_3.xlsx"
-if not TDT.exists() or (D / "TDT_CASCA_UTR_CAS_3_NOVA.xlsx").exists():
-    _n = D / "TDT_CASCA_UTR_CAS_3_NOVA.xlsx"
-    if _n.exists() and _n.stat().st_mtime > TDT.stat().st_mtime:
-        TDT = _n          # a anterior estava aberta no Excel na hora de gerar
+
+
+def _atual(base: str) -> Path:
+    """A MAIS RECENTE entre o arquivo e o _NOVA.
+
+    Quando o arquivo esta aberto no Excel, o gerador grava ao lado como _NOVA.
+    Conferir contra a versao velha da lista produz divergencia de coordenada
+    que NAO existe — foi o que aconteceu ao ignorar as abas ocultas: a TDT
+    nova era comparada com a lista corrigida do dia anterior.
+    """
+    o = D / f"{base}.xlsx"
+    n = D / f"{base}_NOVA.xlsx"
+    if n.exists() and (not o.exists() or n.stat().st_mtime > o.stat().st_mtime):
+        return n
+    return o
+
+
+LISTA = _atual("RGE ADMS_Lista Pontos Casca_CORRIGIDA")
+TDT = _atual("TDT_CASCA_UTR_CAS_3")
 SKIP = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
 HR = 4
 RU, AOR, CONT = "UTR_CAS_3", "CAS Trans", "Cas_Obra"
@@ -79,6 +92,9 @@ def ler_lista():
     pts = []
     for sn in wb.sheetnames:
         if sn in SKIP:
+            continue
+        # aba oculta nao existe — mesma regra do gerador
+        if wb[sn].sheet_state != "visible":
             continue
         ws = wb[sn]
         hi = next((r for r in range(1, min(15, ws.max_row + 1))

@@ -73,6 +73,12 @@ MODULO_EQUIV = {
     "TR7":   ("TR2",   "MEDIA", "aba 'TR 2' da lista -> TR2 do unifilar"),
     "TR7AT": ("TR2AT", "MEDIA", "lado AT do TR2"),
     "TR7BT": ("TR2BT", "MEDIA", "lado BT do TR2"),
+    # ── transferencia 24-01: a obra JA FOI FEITA e virou o modulo TRF1 ──
+    # Instrucao do usuario (28/07/2026): "O AL18 -> TRANSF 24-01 FOI FEITO. E O
+    # MODULO TRF1 OU SEJA SINAIS CAS_TRF1...". Confere com o modelo: existem 47
+    # dispositivos CAS_TRF1_24-1_* (DJ, reles, 86BF) e o CAS_TRF1_TRF1_TC_NEW.
+    # A outra fonte de AL18 era a aba 'BC 1', que esta OCULTA — nao existe.
+    "AL18": ("TRF1", "ALTA", "aba 'TRANSFERENCIA 24-01' -> modulo TRF1 do ADMS"),
     # ── barras ──
     "BP69":    ("B138", "MEDIA", "barra de ALTA; no unifilar e a BARRA P1 138 kV"),
     "BP113.8": ("BP23", "MEDIA", "barra de BAIXA 1; no unifilar e a BARRA P3 23 kV"),
@@ -82,10 +88,8 @@ MODULO_EQUIV = {
     # ── servico auxiliar: o unifilar so tem o TSA-3 ──
     "TSA1": ("TSA3", "BAIXA", "unico TSA do unifilar (TSA-3 45 kVA)"),
     "TSA":  ("TSA3", "BAIXA", "modulo generico das abas RET"),
-    # SEM equivalente no unifilar (o vao nao existe no campo hoje):
-    #   AL24 AL25 AL26 · AL18 (BC 1 e transf. 24-1) · AL28 (BC 2) ·
-    #   TRF29 (transf. 24-2) · IB20 (interbarras BT) · BP213.8 · TSA2
-    # Esses ficam com o nome canonico e entram na aba 13 do relatorio.
+    # AL24, AL25, AL26, AL28, TRF29, IB20 e as abas '(FUTURO)' sumiram daqui:
+    # todas vinham de aba OCULTA, e aba oculta NAO EXISTE (ver read_lista()).
 }
 
 MODELO = Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CASCA.xml")

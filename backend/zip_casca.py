@@ -119,13 +119,30 @@ Onde mexer se uma equivalencia de vao estiver errada:
 Esta tudo num lugar so; corrigir ali e rodar de novo.
 
 
+ABA OCULTA NAO EXISTE
+---------------------
+A lista tem 36 abas, mas 20 estao OCULTAS no Excel — voce nao as ve ao abrir.
+Elas somam 1455 sinais e sao, em sua maioria, COPIAS dos vaos vivos:
+'LT 1 (FUTURO)' repete o 'LT 1', 'BC 1' repete a 'TRANSFERENCIA 24-01'. Outras
+sao vaos que simplesmente nao existem no Cas_Obra (AL24, AL25, AL26, TRF29,
+AL28, IB20).
+
+Ate 28/07/2026 o gerador lia TODAS as abas, porque o openpyxl nao liga para o
+estado da aba. Isso inflava a lista de 1078 para 2535 pontos, criava as 704
+coordenadas repetidas e os 1145 #REF! que eram "corrigidos", e enchia a TDT
+FUTURA de vaos fantasma. Agora read_lista() pula tudo que nao esteja
+'visible' e imprime quais ignorou.
+
+REGRA: o que esta oculto nao existe e nao deve ser considerado.
+
+
 ESTADO NA HORA DO EMPACOTAMENTO
 -------------------------------
-LISTA:  2535 linhas de sinal, 0 sem index
-        D 0..1904 · A 1..361 · C 1..300 — contiguos, sem duplicata
-TDT:    1282 sinais, 0 nome duplicado, 0 coordenada duplicada
-        570 com dispositivo que JA EXISTE  -> TDT_CASCA_ATUAL.xlsx
-        712 esperando o dispositivo        -> TDT_CASCA_FUTURA.xlsx
+LISTA:  1078 linhas de sinal (so as 16 abas VISIVEIS), 0 sem index
+        1 unico #REF! remanescente (eram 1145 com as ocultas)
+TDT:    888 sinais, 0 nome duplicado, 0 coordenada duplicada
+        582 com dispositivo que JA EXISTE  -> TDT_CASCA_ATUAL.xlsx
+        306 esperando o dispositivo        -> TDT_CASCA_FUTURA.xlsx
         0 Device Mapping com tipo errado, 0 "Found multiple"
 COMANDOS: 176/176 resolvidos, 176/176 com configuracao de saida completa
 LINK:    UTR_CAS_3_Link1 presente nas TRES TDTs (a UTR exige >=1)

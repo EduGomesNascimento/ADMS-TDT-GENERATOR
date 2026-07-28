@@ -1126,3 +1126,76 @@ Atencao a duas coisas:
 `backend/futura_motivos.py` gera `CASCA_FUTURA_MOTIVOS.xlsx`: 712 sinais, um
 por linha, com a categoria e o motivo cru. Rodar antes e depois mostra
 exatamente quantos sairam da FUTURA.
+
+## 24. ABA OCULTA NAO EXISTE — o erro mais caro do projeto
+
+**28/07/2026.** O usuario perguntou *"onde que tem ib20 ou al24 na lista de
+pontos????"*. Estavam la, na coluna NOME — mas em abas **ocultas**.
+
+A lista tem **36 abas: 16 visiveis e 20 `hidden`**. O openpyxl nao liga para o
+`sheet_state`, entao eu lia as 36. Resultado: **1455 dos 2535 pontos vinham de
+aba que o usuario nem ve ao abrir o arquivo.**
+
+E o pior: boa parte das ocultas e **copia** das vivas.
+
+| aba oculta | sinais | vao | a viva equivalente |
+|---|---:|---|---|
+| `LT 1 (FUTURO)` | 186 | LT1 | `LT 1` (96) |
+| `LT 2 (FUTURO)` | 186 | LT2 | `LT 2` (96) |
+| `AL 14/15/16/21/22 (FUTURO)` | 73 cada | … | as `AL nn` (68 cada) |
+| `BC 1` | 66 | AL18 | `TRANSFERENCIA 24-01` (68) |
+| `AL 24` `AL 25` `AL 26` | 66 cada | AL24/25/26 | — nao existem |
+| `TRANSF 24-2` | 66 | TRF29 | — nao existe |
+| `BC 2` | 66 | AL28 | — nao existe |
+| `INTERBARRAS BT` | 64 | IB20 | — nao existe |
+
+### O que isso contaminava
+
+Tudo que eu vinha tratando como "caracteristica da lista" era sintoma disto:
+
+- as **704 coordenadas repetidas** — eram o mesmo vao lido duas vezes
+- os **1145 `#REF!`** que eu re-sequenciava — sobrou **1** depois do filtro
+- os **13 nomes duplicados** renomeados — sobraram **2**
+- **metade da TDT FUTURA** (369 de 712) apontava para dispositivo fantasma
+- a recomendacao de "criar 18 disjuntores e 7 TCs" estava simplesmente errada
+
+### A correcao
+
+`read_lista()` (e `ler_lista()` no check) pulam qualquer aba com
+`sheet_state != "visible"` e imprimem quais ignoraram. **Regra do usuario: o
+que esta oculto nao existe e nao deve ser considerado.**
+
+```
+antes -> depois
+lista        2535 -> 1078 pontos
+#REF!        1145 ->    1
+nomes dup      13 ->    2
+TDT           1282 ->  888
+ATUAL          570 ->  582   (subiu)
+FUTURA         712 ->  306   (-57%)
+```
+
+### AL18 -> TRF1
+
+Junto veio a segunda instrucao: *"O AL18 -> TRANSF 24-01 FOI FEITO. E O MODULO
+TRF1 OU SEJA SINAIS CAS_TRF1..."*. A obra da transferencia 24-01 ja existe no
+modelo — 47 dispositivos `CAS_TRF1_24-1_*` mais o `CAS_TRF1_TRF1_TC_NEW`. A aba
+`TRANSFERENCIA 24-01` ja usa `24-1` como equipamento em 57 dos 68 sinais, entao
+o de-para casa direto. Entrou em `MODULO_EQUIV` como `"AL18": ("TRF1", ...)`.
+
+E por isso a ATUAL **cresceu** mesmo com menos sinais no total.
+
+### Bug de tabela vizinho, achado na mesma rodada
+
+`check_casca.py` acusou 10 divergencias de coordenada que nao existiam: ele lia
+a `..._CORRIGIDA.xlsx` do dia anterior enquanto o gerador havia escrito a
+`..._CORRIGIDA_NOVA.xlsx` (o arquivo base estava aberto no Excel). A TDT ja
+tinha o fallback `_NOVA`; a lista nao. Agora os dois passam pela mesma funcao
+`_atual()`.
+
+### A licao
+
+Nunca confie que um `.xlsx` de origem so tem o que se ve. `sheet_state`,
+linhas ocultas e filtros aplicados sao parte do dado. Se um numero da origem
+parecer alto demais (2535 pontos para uma SE deste porte era), desconfie antes
+de construir em cima dele.

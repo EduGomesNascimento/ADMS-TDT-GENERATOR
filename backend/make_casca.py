@@ -241,8 +241,18 @@ SKIP_SHEETS = {"Informações", "RELACAO RELES", "MAPA DE REDE", "Lista"}
 def read_lista():
     wb = openpyxl.load_workbook(LISTA, read_only=True, data_only=True)
     pts = []
+    ocultas = []
     for sn in wb.sheetnames:
         if sn in SKIP_SHEETS:
+            continue
+        # ABA OCULTA NAO EXISTE. Regra do usuario (28/07/2026): "o que esta
+        # oculto nao deve ser considerado". A lista tem 20 abas hidden com
+        # 1455 sinais — copias dos vaos vivos ('LT 1 (FUTURO)' repete o 'LT 1',
+        # 'BC 1' repete a 'TRANSFERENCIA 24-01') e vaos que nao existem no
+        # Cas_Obra (AL24, AL25, AL26, TRF29, AL28, IB20). Ler tudo junto era a
+        # origem das 704 coordenadas repetidas e de metade da TDT FUTURA.
+        if wb[sn].sheet_state != "visible":
+            ocultas.append(sn)
             continue
         rows = list(wb[sn].iter_rows(values_only=True))
         hi = next((i for i, r in enumerate(rows[:14])
@@ -304,6 +314,8 @@ def read_lista():
                 "desc": str(g(r, "DESCRIÇÃO DO PONTO") or "").strip(),
             })
     wb.close()
+    if ocultas:
+        print(f"abas OCULTAS ignoradas ({len(ocultas)}): {', '.join(ocultas)}")
     return pts
 
 
