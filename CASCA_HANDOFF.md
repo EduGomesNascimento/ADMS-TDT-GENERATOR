@@ -1199,3 +1199,85 @@ Nunca confie que um `.xlsx` de origem so tem o que se ve. `sheet_state`,
 linhas ocultas e filtros aplicados sao parte do dado. Se um numero da origem
 parecer alto demais (2535 pontos para uma SE deste porte era), desconfie antes
 de construir em cima dele.
+
+## 25. TDT ATUAL_COMPLETA — o rele que falta vira o disjuntor
+
+**Decisao do usuario, executada em 28/07/2026** (a que a secao 23 deixou
+pendente): *"se nao tem rele pra receber, deve ser alocado no disjuntor"*, e
+**mantendo o Signal Type original** — `RelayTrip` continua `RelayTrip`, nao
+vira `Custom`.
+
+Saida nova: **`TDT_CASCA_ATUAL_COMPLETA.xlsx`** = a ATUAL + os 282 sinais da
+categoria C com o Device Mapping trocado pelo disjuntor do vao.
+
+```
+TDT ATUAL             582   cada sinal no dispositivo exato
+TDT ATUAL_COMPLETA    864   + os 282 no disjuntor
+TDT FUTURA            306   (282 ja cobertos pela COMPLETA; 24 nao tem saida)
+```
+
+Conferido na COMPLETA: 0 nome duplicado, 0 Remote Point Custom ID duplicado,
+0 coordenada duplicada, 0 Device Mapping fora do modelo.
+
+A ATUAL e a FUTURA **nao mudaram** — a COMPLETA e um arquivo a mais, entao da
+para comparar as duas no ADMS e voltar atras sem regerar nada.
+
+### O que destravou: TR12AT e o desempate por nome
+
+Na primeira tentativa so 141 dos 282 foram realocados. Faltavam os
+transformadores e a LTPRI. O usuario apontou o caminho: *"esses TR1AT/TR2AT e
+tals tem no DJ 52-04 ne. investiga no changeset xml"* e *"LTPRI e o 52-02
+atualmente"*.
+
+**O usuario renomeou os dispositivos no ADMS mas manteve o mapeamento antigo**,
+entao nome e ID divergem. Extraindo os dois do `PT-MOD-SE-CAS.xml`:
+
+| nome no ADMS hoje | ID de Mapeamento SCADA (o antigo) | vao |
+|---|---|---|
+| `52-02_CAS` | `CAS_LTPRI_52-21_DJ_NEW` | LTPRI |
+| `52-03_CAS` | `CAS_LTSCO_52-20_DJ_NEW` | LTSCO |
+| **`52-04_CAS`** | **`CAS_TR12AT_52-1_DJ_NEW`** | **TR1AT + TR2AT** |
+| `52-12_CAS` | `CAS_AL12_52-2_DJ_NEW` | AL12 |
+| `52-13_CAS` | `CAS_AL13_52-3_DJ_NEW` | AL13 |
+| `52-14_CAS` | `CAS_AL14_52-4_DJ_NEW` | AL14 |
+| `52-15_CAS` | `CAS_AL15_52-5_DJ_NEW` | AL15 |
+| `52-21_CAS` | `CAS_AL21_52-6_DJ_NEW` | AL21 |
+| `24-01_CAS` | `CAS_TRF1_24-1_DJ_NEW` | TRF1 (o unico novo) |
+
+Duas descobertas:
+
+1. **`TR12AT`** — existe UM disjuntor para os dois transformadores. Eu procurava
+   por `TR1AT`/`TR2AT`, que nao sao vao de disjuntor nenhum; por isso 113 sinais
+   ficavam de fora. Tabela `DJ_DO_VAO` em `casca_devmap.py`. Estendido tambem a
+   TR1/TR2/TR1BT/TR2BT: nao ha disjuntor de lado BT nem por transformador, o
+   52-04 e o unico do conjunto.
+2. **LTPRI tem dois IDs de disjuntor** (`52-21` e `52-22`) mas so o `52-21` esta
+   NOMEADO no modelo de hoje (`52-02_CAS`). Virou regra de desempate: com mais
+   de um disjuntor, vale o que existe nomeado.
+
+### Armadilha na leitura do XML
+
+O `<Property id="1224979098644840199">` vem **ANTES** do `IDOBJ_NAME` dentro do
+mesmo `<ResourceDescription>`. Recortar o XML por `IDOBJ_NAME` associa o ID ao
+objeto ERRADO — foi assim que eu "descobri" que o disjuntor `52-02_CAS`
+carregava um ID de seccionadora. Parseie por `<ResourceDescription>`.
+
+### Onde o disjuntor NAO e usado
+
+So a categoria C e realocada. Ficam de fora, porque ali o disjuntor tambem nao
+resolve:
+
+- **D — papel fisico ocupado** (15): a chave ou o medidor que falta no modelo
+- **E — medida de tensao sem TP** (4): tensao nao pode ficar em TC nem no DJ
+- **TSA2** (5): o vao nao tem disjuntor no modelo
+
+O contador de papel fisico da realocacao (`ocupado_dj`) e SEPARADO do da
+ATUAL/FUTURA, para a COMPLETA nao contaminar a decisao das outras duas.
+`RelayTrip` nao e papel unico, entao varios cabem no mesmo disjuntor — que e
+exatamente o efeito desejado (o 52-04 recebeu 113).
+
+### Se o ADMS recusar
+
+O plano B continua sendo rebaixar o `Signal Type` para `Custom` (a base mostra
+49 `Custom` num unico DJ) — mas **registrando quais foram**, nunca em silencio.
+Chave `C_NO_DISJUNTOR` em `make_casca.py` desliga tudo.

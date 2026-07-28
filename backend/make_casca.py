@@ -39,6 +39,11 @@ OUT_REL = Path("C:/Users/egnpo/Downloads/CASCA_RELATORIO.xlsx")
 # As duas TDTs separadas por situacao do dispositivo no modelo.
 OUT_ATUAL = Path("C:/Users/egnpo/Downloads/TDT_CASCA_ATUAL.xlsx")
 OUT_FUTURA = Path("C:/Users/egnpo/Downloads/TDT_CASCA_FUTURA.xlsx")
+# A ATUAL mais os sinais cujo rele especifico nao existe, realocados no
+# DISJUNTOR do vao. Decisao do usuario (28/07/2026): "se nao tem rele pra
+# receber, deve ser alocado no disjuntor" — mantendo o Signal Type original.
+OUT_COMPLETA = Path("C:/Users/egnpo/Downloads/TDT_CASCA_ATUAL_COMPLETA.xlsx")
+C_NO_DISJUNTOR = True
 SPLIT_TDT = True
 PULAR_LISTA = False        # --rapido: nao regrava a lista corrigida
 
@@ -1403,7 +1408,7 @@ def main():
              ("DNP3_DiscreteAnalog", "A/D")]
     gerados = defaultdict(int); pulados = []; usou_fallback = []
     # linhas separadas por situacao do dispositivo, para gerar as 2 TDTs
-    split_rows = defaultdict(lambda: {"atual": [], "futura": []})
+    split_rows = defaultdict(lambda: {"atual": [], "futura": [], "completa": []})
     dm_rows = []; dm_origem = Counter(); dm_pendentes = []
     # O Casca_Obra é CÓPIA da CASCA: os dispositivos clonados herdaram o MESMO
     # "ID de Mapeamento SCADA" dos originais, então o ADMS acha DOIS candidatos
@@ -1431,6 +1436,11 @@ def main():
     #                    fazia VB_B (tensao barra) e VB_L (tensao linha) baterem
     _UNICO = {"SwitchStatus"}
     ocupado_fis = set()
+    # papeis ja ocupados NO DISJUNTOR pela realocacao da ATUAL_COMPLETA —
+    # conjunto proprio, para nao interferir na ATUAL/FUTURA
+    ocupado_dj = set()
+    realoc_dj = []
+    sem_dj = []
 
     def _papel_fisico(dm_alvo, sig_type, med, fases):
         if sig_type in _UNICO:
@@ -1520,6 +1530,13 @@ def main():
             # Device Mapping resolvido ANTES de montar a linha: no modo estrito
             # o sinal sem alvo no catalogo da CASCA nao entra na TDT.
             na_utr = False
+            dm_dj = None          # alternativa da ATUAL_COMPLETA (disjuntor)
+            dm_dj_nota = ""
+            # o que o molde diz do sinal — precisa estar disponivel mesmo
+            # quando o Device Mapping nem chega a ser resolvido
+            _g = lambda col: (str(tpl[L(col) - 1]) if L(col) and
+                              L(col) - 1 < len(tpl) else "")
+            _st = _g("Signal Type")
             _pp = p["nome"].split("_")            # device REAL, p/ o Device Mapping
             alias = _pp[0]; mod = _pp[1] if len(_pp) > 1 else ""
             dev = _pp[2] if len(_pp) > 2 else ""
@@ -1560,9 +1577,6 @@ def main():
                             dm_o = f"{dm_o} + {_nota}"
                 # o dispositivo aceita esse Signal Type?
                 if dm_base is not None:
-                    _g = lambda col: (str(tpl[L(col) - 1]) if L(col) and
-                                      L(col) - 1 < len(tpl) else "")
-                    _st = _g("Signal Type")
                     _cb, _por = _cabe(f"{dm_base}{DM_SUFIXO}", _st, _g("Measurement Type"))
                     _pf = _papel_fisico(f"{dm_base}{DM_SUFIXO}", _st,
                                         _g("Measurement Type"), _g("Phases"))
@@ -1591,6 +1605,27 @@ def main():
                         usado_dm[(f"{dm_base}{DM_SUFIXO}", _st)] += 1
                         if _pf is not None:
                             ocupado_fis.add(_pf)
+                # TDT ATUAL_COMPLETA: se o rele ESPECIFICO nao existe, o sinal
+                # vai para o DISJUNTOR do vao em vez de esperar o rele nascer.
+                # Decisao do usuario (28/07/2026): "se nao tem rele pra receber,
+                # deve ser alocado no disjuntor" — mantendo o Signal Type
+                # original (RelayTrip continua RelayTrip, nao vira Custom).
+                # So vale para incompatibilidade de TIPO (categoria C); papel
+                # fisico ocupado e medida de tensao em TC continuam de fora,
+                # porque ali o disjuntor tambem nao resolve.
+                if (dm_base is None and C_NO_DISJUNTOR
+                        and any(k in dm_o for k in ("nao carrega sinal",
+                                                    "rele GENERICO"))):
+                    _dj, _ndj = devmap.disjuntor_do_vao(mod, dev, DM_SUFIXO)
+                    if _dj:
+                        _pfd = _papel_fisico(_dj, _st, _g("Measurement Type"),
+                                             _g("Phases"))
+                        if _pfd is None or _pfd not in ocupado_dj:
+                            dm_dj, dm_dj_nota = _dj, _ndj
+                            if _pfd is not None:
+                                ocupado_dj.add(_pfd)
+                    else:
+                        sem_dj.append([p["nome"], p["sigla"], _st, _ndj])
                 if dm_base is None:
                     # nome CANONICO: o dispositivo que este sinal PRECISARIA
                     _suf, _ = devmap.sufixo(sigla_ef, dev)
@@ -1701,6 +1736,22 @@ def main():
             rows.append(row)
             _existe = f"{dm_base}{DM_SUFIXO}" in devmap.modelo_new()[0]
             split_rows[sheet]["atual" if _existe else "futura"].append(row)
+            # ── ATUAL_COMPLETA ──────────────────────────────────────────────
+            # o que ja tem dispositivo entra igual; o que so tinha o rele
+            # inexistente entra com o Device Mapping trocado pelo DISJUNTOR.
+            if _existe:
+                split_rows[sheet]["completa"].append(row)
+            elif dm_dj:
+                alt = list(row)
+                _cdm = L("Device Mapping")
+                if _cdm:
+                    alt[_cdm - 1] = dm_dj
+                _cdv = L("Device")
+                if _cdv:
+                    alt[_cdv - 1] = devmap.nome_do_dispositivo(dm_dj) or None
+                split_rows[sheet]["completa"].append(alt)
+                realoc_dj.append([p["sheet"], p["linha"], p["tipo"], p["sigla"],
+                                  nome, _st, dm, dm_dj, dm_dj_nota, dm_o])
         for i, row in enumerate(rows):
             for c in range(ncol):
                 cell = ws.cell(HEADER_ROWS + 1 + i, c + 1, value=row[c])
@@ -1805,7 +1856,10 @@ def main():
     #   FUTURA  -> Device Mapping que ainda PRECISA ser criado; o erro do import
     #              e a propria lista do que fazer (ver abas 19 e 23)
     if SPLIT_TDT:
-        for qual, nome_arq in (("atual", OUT_ATUAL), ("futura", OUT_FUTURA)):
+        _saidas = [("atual", OUT_ATUAL), ("futura", OUT_FUTURA)]
+        if C_NO_DISJUNTOR:
+            _saidas.append(("completa", OUT_COMPLETA))
+        for qual, nome_arq in _saidas:
             w2 = openpyxl.load_workbook(SKEL)
             n = {}
             for sheet, _tipo in plano:
@@ -1846,7 +1900,18 @@ def main():
             except PermissionError:
                 alvo = nome_arq.with_name(nome_arq.stem + "_NOVA.xlsx")
                 alvo.write_bytes(d2)
-            print(f"TDT {qual.upper():<7} {alvo.name:<34} {sum(n.values()):>5} sinais  {n}")
+            print(f"TDT {qual.upper():<8} {alvo.name:<38} {sum(n.values()):>5} sinais  {n}")
+        if realoc_dj:
+            _vaos = Counter(r[7].split("_")[1] for r in realoc_dj)
+            print(f"ATUAL_COMPLETA: {len(realoc_dj)} sinais realocados no "
+                  f"DISJUNTOR do vao (rele especifico nao existe) — "
+                  f"{len(_vaos)} vaos: {dict(_vaos)}")
+        if sem_dj:
+            _mot = Counter(r[3] for r in sem_dj)
+            print(f"ATUAL_COMPLETA: {len(sem_dj)} NAO puderam ir para o "
+                  f"disjuntor — continuam so na FUTURA:")
+            for _m, _q in _mot.most_common():
+                print(f"   {_q:>4}  {_m}")
 
 
 if __name__ == "__main__":

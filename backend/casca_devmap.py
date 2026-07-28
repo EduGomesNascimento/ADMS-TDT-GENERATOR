@@ -700,6 +700,94 @@ def vao_canonico(mod: str, suf: str) -> str:
     return max(cands, key=_peso)
 
 
+# O vao do sinal nem sempre e o vao do DISJUNTOR que o protege.
+# Confirmado no PT-MOD-SE-CAS.xml: existe UM unico disjuntor para os dois
+# transformadores, CAS_TR12AT_52-1_DJ_NEW, hoje chamado '52-04_CAS' no ADMS
+# ("esses TR1AT/TR2AT e tals tem no DJ 52-04", usuario 28/07/2026).
+# Nao ha disjuntor de lado BT nem por transformador separado — o 52-04 e o
+# unico do conjunto, entao TR1/TR2 e os lados BT tambem apontam para ele.
+DJ_DO_VAO = {
+    "TR1AT": "TR12AT", "TR2AT": "TR12AT",
+    "TR1":   "TR12AT", "TR2":   "TR12AT",
+    "TR1BT": "TR12AT", "TR2BT": "TR12AT",
+}
+
+
+def nome_no_modelo_new() -> dict[str, str]:
+    """ID de Mapeamento SCADA -> nome ATUAL do dispositivo no ADMS.
+
+    O usuario renomeou os dispositivos mas manteve o mapeamento antigo, entao
+    os dois divergem: o disjuntor chamado '52-02_CAS' carrega o ID
+    'CAS_LTPRI_52-21_DJ_NEW'. Ter o nome permite desempatar quando um vao tem
+    dois IDs de disjuntor: vale o que de fato existe nomeado no modelo.
+    """
+    if "nome_new" not in _CACHE:
+        m = {}
+        if MODELO_NEW.exists():
+            txt = MODELO_NEW.read_text(encoding="utf-8-sig", errors="replace")
+            for b in re.findall(r"<ResourceDescription>(.*?)</ResourceDescription>",
+                                txt, re.S):
+                mp = re.search(rf'id="{PROP_SCADA_ID}" value="([^"]+)"', b)
+                nm = re.search(r'IDOBJ_NAME" value="([^"]+)"', b)
+                if mp and nm:
+                    m[mp.group(1)] = nm.group(1)
+        _CACHE["nome_new"] = m
+    return _CACHE["nome_new"]
+
+
+def disjuntor_do_vao(mod: str, dev: str = "", sufixo: str = "") -> tuple[str | None, str]:
+    """(ID do DISJUNTOR do vao no modelo, nota). Devolve (None, motivo) se nao
+    der para escolher com seguranca.
+
+    Usado pela TDT ATUAL_COMPLETA: quando o rele especifico de uma funcao nao
+    existe no Cas_Obra, o sinal vai para o disjuntor do vao em vez de esperar o
+    rele ser criado (decisao do usuario, 28/07/2026).
+
+    CASA PELO EQUIPAMENTO DO PROPRIO SINAL. Um vao pode ter mais de um
+    disjuntor — a LTSCO tem o 52-1 e o 52-20 — e mandar o trip do 52-1 para o
+    52-20 seria pior do que deixar o sinal de fora. So quando o sinal nao
+    nomeia um disjuntor (CAS_LTSCO_LTSCO_xx) e o vao tem UM unico DJ e que se
+    usa esse.
+
+    Aceita o nome da LISTA (TR6, LT2) ou o do MODELO (TR1, LTPRI), e cobre o
+    vao com DOIS nomes (LTMRU <-> LTKVM: o disjuntor mora sob LTKVM).
+    """
+    ids, _dup = modelo_new()
+    if not ids:
+        return None, "sem modelo carregado"
+    _por, alias = indice_modelo()
+    equiv = MODULO_EQUIV.get(mod)
+    alvo = equiv[0] if equiv else mod
+    # o disjuntor pode morar em outro vao (TR1AT -> TR12AT)
+    nota_vao = ""
+    if alvo in DJ_DO_VAO:
+        nota_vao = f" (o disjuntor do {alvo} mora sob {DJ_DO_VAO[alvo]})"
+        alvo = DJ_DO_VAO[alvo]
+    vaos = [alvo, *alias.get(alvo, [])]
+    djs = [i for i in ids
+           if _vao_suf(i)[0] in vaos and _vao_suf(i)[1].replace(sufixo, "") == "DJ"]
+    if not djs:
+        return None, f"o vao {alvo} nao tem disjuntor no modelo"
+    # 1) o disjuntor do PROPRIO equipamento do sinal (CAS_LTSCO_52-1_51N -> 52-1)
+    exato = [i for i in djs if i.split("_")[2] == dev]
+    if exato:
+        return exato[0], f"disjuntor do proprio {dev}{nota_vao}"
+    # 2) o vao tem um so — sem ambiguidade
+    if len(djs) == 1:
+        return djs[0], f"unico disjuntor do vao {alvo}{nota_vao}"
+    # 3) dois ou mais: vale o que EXISTE NOMEADO no modelo de hoje. A LTPRI tem
+    #    o 52-21 e o 52-22, mas so o 52-21 esta nomeado ('52-02_CAS') — e o
+    #    usuario confirmou: "LTPRI e o 52-02 atualmente".
+    nomes = nome_no_modelo_new()
+    nomeados = [i for i in djs if nomes.get(i)]
+    if len(nomeados) == 1:
+        return nomeados[0], (f"unico disjuntor NOMEADO do vao {alvo} "
+                             f"({nomes[nomeados[0]]}){nota_vao}")
+    return None, (f"o vao {alvo} tem {len(djs)} disjuntores "
+                  f"({', '.join(i.split('_')[2] for i in sorted(djs))}) e o "
+                  f"sinal nao diz qual — realocar seria chute")
+
+
 def container_da_subestacao() -> tuple[str, str]:
     """(nome, custom id) da SUBSTATION do modelo — é ela que o campo Container
     da aba DNP3_RTUs referencia (no esqueleto da LVA era 'LAGOA VERMELHA 1').

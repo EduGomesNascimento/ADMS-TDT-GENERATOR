@@ -29,6 +29,7 @@ ITENS = [
     # ── o que se entrega ──
     (*_atual("TDT_CASCA_UTR_CAS_3"),                          "1-ENTREGA", True),
     (DOWN / "TDT_CASCA_ATUAL.xlsx",                          "1-ENTREGA", False),
+    (DOWN / "TDT_CASCA_ATUAL_COMPLETA.xlsx",                 "1-ENTREGA", False),
     (DOWN / "TDT_CASCA_FUTURA.xlsx",                         "1-ENTREGA", False),
     (DOWN / "TDT_CASCA_LT2.xlsx",                            "1-ENTREGA", False),
     (*_atual("RGE ADMS_Lista Pontos Casca_CORRIGIDA"),       "1-ENTREGA", False),
@@ -76,7 +77,11 @@ tomadas, as armadilhas ja pagas e o que fazer em seguida.
 
 1-ENTREGA/   o que se importa no ADMS e o relatorio que explica
              - TDT_CASCA_ATUAL.xlsx ............ so os sinais cujo dispositivo
-               JA EXISTE no Cas_Obra. Importa limpo. COMECE POR ELA.
+               JA EXISTE no Cas_Obra, cada um no dispositivo exato
+             - TDT_CASCA_ATUAL_COMPLETA.xlsx ... a ATUAL mais os 282 sinais
+               cujo rele especifico nao existe, realocados no DISJUNTOR do
+               vao (o Signal Type original e mantido: RelayTrip continua
+               RelayTrip). E A MAIS COMPLETA — COMECE POR ELA.
              - TDT_CASCA_FUTURA.xlsx ........... os que esperam o dispositivo
                ser criado (ver aba 23 do relatorio)
              - TDT_CASCA_UTR_CAS_3.xlsx ........ as duas juntas (completa)
@@ -146,7 +151,8 @@ LISTA:  1078 linhas de sinal (so as 16 abas VISIVEIS), 0 sem index
         1 unico #REF! remanescente (eram 1145 com as ocultas)
 TDT:    888 sinais, 0 nome duplicado, 0 coordenada duplicada
         582 com dispositivo que JA EXISTE  -> TDT_CASCA_ATUAL.xlsx
-        306 esperando o dispositivo        -> TDT_CASCA_FUTURA.xlsx
+        864 com o rele inexistente no DJ   -> TDT_CASCA_ATUAL_COMPLETA.xlsx
+         24 sem saida (papel ocupado / TP) -> so na TDT_CASCA_FUTURA.xlsx
         0 Device Mapping com tipo errado, 0 "Found multiple"
 COMANDOS: 176/176 resolvidos, 176/176 com configuracao de saida completa
 LINK:    UTR_CAS_3_Link1 presente nas TRES TDTs (a UTR exige >=1)
