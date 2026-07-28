@@ -30,8 +30,9 @@ ACAO = {
           "Desenhar o vao no Cas_Obra (disjuntor, TC, TP, seccionadoras e "
           "reles). E obra, nao e erro de mapeamento."),
     "C": ("Rele especifico nao existe",
-          "Criar o rele da funcao no vao. Sem ele o sinal cai no disjuntor, "
-          "e disjuntor nao carrega RelayTrip/Enabled."),
+          "Criar o rele da funcao no vao. Enquanto ele nao existe, a "
+          "TDT_CASCA_ATUAL_COMPLETA poe o sinal no _PROT generico do vao "
+          "(ou no disjuntor, se for sinal solto) — ver as duas colunas ao lado."),
     "D": ("Papel fisico ja ocupado",
           "O modelo tem MENOS equipamento que a lista (ex.: TR2AT so tem a "
           "89-16 e a lista traz 89-20/22/24). Criar a chave/medidor que falta."),
@@ -86,6 +87,22 @@ def main():
             })
     wb.close()
 
+    # 1b) onde a ATUAL_COMPLETA colocou cada um (o _PROT do vao ou o disjuntor)
+    completa = {}
+    pc = DOWN / "TDT_CASCA_ATUAL_COMPLETA.xlsx"
+    if pc.exists():
+        wc = openpyxl.load_workbook(pc, read_only=True, data_only=True)
+        for sn in ("DNP3_DiscreteSignals", "DNP3_AnalogSignals",
+                   "DNP3_DiscreteAnalog"):
+            if sn not in wc.sheetnames:
+                continue
+            ls = list(wc[sn].iter_rows(values_only=True))
+            ix = {n: i for i, n in enumerate(ls[HR - 1]) if n}
+            for r in ls[HR:]:
+                if r[ix["Signal Name"]]:
+                    completa[r[ix["Signal Name"]]] = r[ix["Device Mapping"]]
+        wc.close()
+
     # 2) o motivo, do relatorio
     wr = openpyxl.load_workbook(REL, read_only=True, data_only=True)
     motivo = {}
@@ -115,13 +132,17 @@ def main():
     c = collections.Counter(s["cat"] for s in sinais)
     vao = collections.Counter(s["nome"].split("_")[1] for s in sinais)
     linhas = [
-        ["POR QUE OS 712 SINAIS DA TDT FUTURA AINDA NAO ENTRARAM"], [],
+        [f"POR QUE OS {len(sinais)} SINAIS DA TDT FUTURA NAO ESTAO NA ATUAL"], [],
         ["Nenhum sinal da FUTURA esta ERRADO. Todos tem nome, index DNP3,"],
         ["escala, descricao e comando corretos — sairam da mesma lista e"],
-        ["passaram pelas mesmas conferencias dos 570 da TDT ATUAL."], [],
-        ["O que falta e o DISPOSITIVO no Cas_Obra. No ADMS todo sinal precisa"],
-        ["apontar para um equipamento que existe; nao ha 'sinal solto' (ja"],
-        ["testamos apontar para a propria UTR e o ADMS recusa igual)."], [],
+        ["passaram pelas mesmas conferencias dos sinais da TDT ATUAL."], [],
+        ["O que falta e o DISPOSITIVO EXATO no Cas_Obra. No ADMS todo sinal"],
+        ["precisa apontar para um equipamento que existe; nao ha 'sinal solto'"],
+        ["(ja testamos apontar para a propria UTR e o ADMS recusa igual)."], [],
+        [f"MAS {sum(1 for s in sinais if completa.get(s['nome']))} DELES JA TEM"
+         " DESTINO NA TDT_CASCA_ATUAL_COMPLETA: o que e protecao vai para o"],
+        ["_PROT generico do vao e o que e solto vai para o disjuntor. Veja a"],
+        ["coluna 'JA RESOLVIDO na ATUAL_COMPLETA?' da aba 1."], [],
         ["Cat", "Sinais", "%", "Situacao", "O que fazer no modelo"],
     ]
     tot = len(sinais)
@@ -146,24 +167,30 @@ def main():
     ws = wb.create_sheet("1-SINAL A SINAL")
     cabec = ["#", "Sinal", "Vao", "SIGLA", "Aba", "Descricao",
              "Input", "Output", "Device Mapping que falta", "Cat",
-             "Situacao", "Motivo exato do gerador", "O que fazer"]
+             "Situacao", "JA RESOLVIDO na ATUAL_COMPLETA?",
+             "Onde entrou na ATUAL_COMPLETA", "Motivo exato do gerador",
+             "O que fazer"]
     ws.append(cabec)
     for cel in ws[1]:
         cel.font = hdrf; cel.fill = hdrfill
         cel.alignment = Alignment(vertical="center", wrap_text=True)
     for i, s in enumerate(sorted(sinais, key=lambda s: (s["cat"], s["nome"])), 1):
         pp = s["nome"].split("_")
+        alvo = completa.get(s["nome"], "")
         ws.append([i, s["nome"], pp[1] if len(pp) > 1 else "",
                    "_".join(pp[3:]) if len(pp) > 3 else "",
                    s["aba"], s["desc"], s["in"], s["out"], s["dm"], s["cat"],
-                   ACAO[s["cat"]][0], s["motivo"], ACAO[s["cat"]][1]])
+                   ACAO[s["cat"]][0], "SIM" if alvo else "nao", alvo,
+                   s["motivo"], ACAO[s["cat"]][1]])
         f = PatternFill("solid", fgColor=cor[s["cat"]])
         for j in (10, 11):
             ws.cell(ws.max_row, j).fill = f
+        ws.cell(ws.max_row, 12).fill = PatternFill(
+            "solid", fgColor="C6EFCE" if alvo else "FFC7CE")
     ws.freeze_panes = "B2"
-    ws.auto_filter.ref = f"A1:M{ws.max_row}"
-    for col, w in zip("ABCDEFGHIJKLM",
-                      (5, 30, 9, 10, 16, 42, 8, 8, 34, 5, 26, 80, 70)):
+    ws.auto_filter.ref = f"A1:O{ws.max_row}"
+    for col, w in zip("ABCDEFGHIJKLMNO",
+                      (5, 30, 9, 10, 16, 42, 8, 8, 34, 5, 26, 12, 32, 80, 70)):
         ws.column_dimensions[col].width = w
 
     ws = wb.create_sheet("2-POR DISPOSITIVO")

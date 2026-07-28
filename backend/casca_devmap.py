@@ -712,6 +712,72 @@ DJ_DO_VAO = {
     "TR1BT": "TR12AT", "TR2BT": "TR12AT",
 }
 
+# O transformador nao tem TP proprio: a medida de tensao vem do TP da BARRA.
+# "os TPs de TR usa o BP23 e o de B138" (usuario, 28/07/2026) — lado de ALTA
+# le a barra de 138 kV, lado de BAIXA le a barra de 23 kV. Confere com o
+# modelo, que so tem CAS_B138_B138_TP_NEW e CAS_BP23_BP23_TP_NEW alem dos TPs
+# de linha (o TR2BT tem um proprio, e esse continua valendo).
+TP_DO_VAO = {
+    "TR1AT": "B138", "TR2AT": "B138",
+    "TR1BT": "BP23", "TR2BT": "BP23",
+    # a transferencia 24-01 e do lado de 23 kV — INFERIDO, confirmar
+    "TRF1":  "BP23",
+}
+
+
+def rele_generico_do_vao(mod: str, prefixo: str = "",
+                         sufixo: str = "") -> tuple[str | None, str]:
+    """(ID do rele GENERICO do vao, nota).
+
+    Regra do usuario (28/07/2026): *"o que for protecao joga dentro de PROT
+    ex CAS_LTSCO_LTSCO_PROT_NEW, o que for solto direto no disjuntor"*.
+
+    `prefixo` e 'P' (pickup) ou 'A' (alarme) — eles tem dispositivo proprio
+    (`..._P_PROT`, `..._A_PROT`), mas so nas tres linhas de 138 kV. Onde o
+    especifico nao existe, cai no `_PROT` comum.
+
+    ATENCAO: isto contraria o que a TDT ANTIGA sugeria (la ZERO sinais
+    apontavam para um `_PROT` sem codigo, o que me fez trata-lo como conteiner
+    dos reles especificos). O usuario, que manda no modelo, decidiu o
+    contrario — e o export de 28/07 12:02 trouxe os `_PROT` que faltavam.
+    """
+    ids, _d = modelo_new()
+    if not ids:
+        return None, "sem modelo carregado"
+    equiv = MODULO_EQUIV.get(mod)
+    alvo = equiv[0] if equiv else mod
+    _p, alias = indice_modelo()
+    tentar = [f"{prefixo}_PROT" if prefixo else "PROT"]
+    if prefixo:
+        tentar.append("PROT")          # sem P_PROT/A_PROT, vale o comum
+    for v in [alvo, *alias.get(alvo, [])]:
+        pre = f"CAS_{v}_"
+        for suf in tentar:
+            # exato: CAS_<vao>_<device>_<suf> — o device nao pode ter '_'
+            hit = [i for i in ids
+                   if i.startswith(pre) and i.endswith(f"_{suf}{sufixo}")
+                   and i[len(pre):].rsplit(f"_{suf}{sufixo}", 1)[0].count("_") == 0]
+            if hit:
+                nota = f"rele generico {suf} do vao {v}"
+                if prefixo and suf == "PROT":
+                    nota += f" (o vao nao tem {prefixo}_PROT proprio)"
+                return hit[0], nota
+    return None, f"o vao {alvo} nao tem rele generico no modelo"
+
+
+def tp_do_vao(mod: str, sufixo: str = "") -> tuple[str | None, str]:
+    """(ID do TP que atende este vao, nota). Ver TP_DO_VAO."""
+    ids, _d = modelo_new()
+    equiv = MODULO_EQUIV.get(mod)
+    alvo = equiv[0] if equiv else mod
+    barra = TP_DO_VAO.get(alvo)
+    if not barra:
+        return None, ""
+    alvo_id = f"CAS_{barra}_{barra}_TP{sufixo}"
+    if alvo_id in ids:
+        return alvo_id, f"o {alvo} nao tem TP proprio — le o TP da barra {barra}"
+    return None, f"a barra {barra} nao tem TP no modelo"
+
 
 def nome_no_modelo_new() -> dict[str, str]:
     """ID de Mapeamento SCADA -> nome ATUAL do dispositivo no ADMS.

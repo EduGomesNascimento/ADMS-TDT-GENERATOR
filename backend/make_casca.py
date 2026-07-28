@@ -97,6 +97,11 @@ CMD_COLS = ["Output Data Type", "Control Codes", "Commanding Mode",
 CMD_CFG_PADRAO = ["SingleCoord", "LatchOff;LatchOn", "DirectOperate",
                   "0.25;0.25", "ReadWrite", 35, False]
 CMD_CFG: dict[str, list] = {}
+# Quantos sinais de cada Signal Type um tipo de dispositivo aceita.
+# Nao e documentado: vem MEDIDO do retorno de um import real, por
+# _cota_import.py. O ADMS recusa o excedente com "Same signal ...
+# already mapped on device ... in same mapping action".
+COTA_IMPORT: dict[str, int] = {}
 
 
 def carrega_cmd_cfg() -> dict[str, list]:
@@ -1291,8 +1296,12 @@ def main():
     print(f"lista: {len(pts)} pontos ({n_sim} Utilizado?=SIM, {len(pts) - n_sim} NAO) "
           f"— TODOS recebem coordenada")
 
-    global CMD_CFG
+    global CMD_CFG, COTA_IMPORT
     CMD_CFG = carrega_cmd_cfg()
+    _cp = DATA / "cota_import.json"
+    if _cp.exists():
+        COTA_IMPORT = json.loads(_cp.read_text(encoding="utf-8"))
+        print(f"cota medida no retorno do ADMS: {len(COTA_IMPORT)} pares")
 
     idx = json.loads((DATA / "sigla_index.json").read_text(encoding="utf-8"))
     TPL = {"D": idx["DNP3_DiscreteSignals"], "A": idx["DNP3_AnalogSignals"],
@@ -1439,6 +1448,7 @@ def main():
     # papeis ja ocupados NO DISJUNTOR pela realocacao da ATUAL_COMPLETA —
     # conjunto proprio, para nao interferir na ATUAL/FUTURA
     ocupado_dj = set()
+    usado_dj = Counter()
     realoc_dj = []
     sem_dj = []
 
@@ -1616,16 +1626,59 @@ def main():
                 if (dm_base is None and C_NO_DISJUNTOR
                         and any(k in dm_o for k in ("nao carrega sinal",
                                                     "rele GENERICO"))):
-                    _dj, _ndj = devmap.disjuntor_do_vao(mod, dev, DM_SUFIXO)
-                    if _dj:
-                        _pfd = _papel_fisico(_dj, _st, _g("Measurement Type"),
+                    # "o que for PROTECAO joga dentro de PROT, o que for SOLTO
+                    # direto no disjuntor" (usuario, 28/07/2026).
+                    # Como se sabe se e protecao? Pelo dispositivo IDEAL que a
+                    # convencao ja calcula: se a sigla pede um rele (PROT_xx),
+                    # e protecao; se pede DJ/SEC/TC/TP, e solto.
+                    _sufi, _ = devmap.sufixo(sigla_ef, dev)
+                    _ehprot = _sufi.startswith(("PROT", "P_PROT", "A_PROT"))
+                    _pref = _pp[3] if len(_pp) > 4 and _pp[3] in ("P", "A") else ""
+                    _cands = []
+                    if _ehprot:
+                        _cands.append(devmap.rele_generico_do_vao(
+                            mod, _pref, DM_SUFIXO))
+                    _cands.append(devmap.disjuntor_do_vao(mod, dev, DM_SUFIXO))
+                    _por_ultimo = ""
+                    for _alvo, _nalvo in _cands:
+                        if not _alvo:
+                            _por_ultimo = _nalvo
+                            continue
+                        # papel fisico e COTA MEDIDA no retorno do ADMS
+                        _pfd = _papel_fisico(_alvo, _st, _g("Measurement Type"),
                                              _g("Phases"))
-                        if _pfd is None or _pfd not in ocupado_dj:
-                            dm_dj, dm_dj_nota = _dj, _ndj
-                            if _pfd is not None:
-                                ocupado_dj.add(_pfd)
-                    else:
-                        sem_dj.append([p["nome"], p["sigla"], _st, _ndj])
+                        if _pfd is not None and _pfd in ocupado_dj:
+                            _por_ultimo = f"{_alvo} ja tem esse papel fisico"
+                            continue
+                        _lim = COTA_IMPORT.get(
+                            f"{devmap.tipo_dispositivo(_alvo)}|{_st}")
+                        if _lim is not None and usado_dj[(_alvo, _st)] >= _lim:
+                            _por_ultimo = (f"{_alvo} ja tem {_lim} sinal(is) "
+                                           f"'{_st}' — e a cota medida no "
+                                           f"retorno do ADMS")
+                            continue
+                        dm_dj, dm_dj_nota = _alvo, _nalvo
+                        usado_dj[(_alvo, _st)] += 1
+                        if _pfd is not None:
+                            ocupado_dj.add(_pfd)
+                        break
+                    if not dm_dj:
+                        sem_dj.append([p["nome"], p["sigla"], _st, _por_ultimo])
+                # MEDIDA DE TENSAO do transformador: nao existe TP de TR, a
+                # leitura vem do TP da BARRA ("os TPs de TR usa o BP23 e o de
+                # B138"). Vale para a TDT toda, nao so para a COMPLETA — e o
+                # dispositivo CERTO, nao um rebaixamento.
+                if dm_base is None and _g("Measurement Type") in _MED_TENSAO:
+                    _tp, _ntp = devmap.tp_do_vao(mod, DM_SUFIXO)
+                    if _tp:
+                        _pft = _papel_fisico(_tp, _st, _g("Measurement Type"),
+                                             _g("Phases"))
+                        if _pft is None or _pft not in ocupado_fis:
+                            dm_base = _tp[:-len(DM_SUFIXO)] if DM_SUFIXO and \
+                                _tp.endswith(DM_SUFIXO) else _tp
+                            dm_o = _ntp
+                            if _pft is not None:
+                                ocupado_fis.add(_pft)
                 if dm_base is None:
                     # nome CANONICO: o dispositivo que este sinal PRECISARIA
                     _suf, _ = devmap.sufixo(sigla_ef, dev)
