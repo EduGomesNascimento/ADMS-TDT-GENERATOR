@@ -1077,3 +1077,52 @@ A configuração de saída passou a ser **aprendida por sigla**, nesta ordem:
 não-roteável **`0.0.0.0`**: é obviamente provisório e não colide com
 equipamento real. O time de comunicação troca em `LINK_IP` (a LVA usa
 `10.7.124.99`, porta 20000).
+
+## 23. DECIDIDO, AINDA NAO FEITO — categoria C no disjuntor
+
+**Decisao do usuario (28/07/2026):** os 284 sinais da categoria C — aqueles cujo
+rele especifico nao existe no `Cas_Obra` — devem ser alocados no **disjuntor do
+vao**, e o **`Signal Type` original se mantem** (`RelayTrip` continua
+`RelayTrip`; nao rebaixar para `Custom`).
+
+**Ainda NAO implementado.** Fica para uma proxima rodada.
+
+### O que a base diz
+
+Nas 27 SEs, um disjuntor carrega:
+
+```
+49 Custom · 18 MeasuredValue · 3 SwitchStatus · 3 Local · 3 FaultRecorder
+ 2 HotLineTag · 2 RecloserLockout · 2 ReclosingEnabled · 1 Malfunctioning
+```
+
+`RelayTrip` e `Enabled`: **zero** disjuntores. Sempre num `*_PROT_*` (ou
+`TAP_REG`, no caso do `Enabled`).
+
+Ou seja: o disjuntor **aceita** carregar sinal — 49 `Custom` num unico DJ, sem
+limite pratico — mas ninguem nunca pos `RelayTrip` nele. Isso e **convencao de
+modelagem**, nao uma trava conhecida do ADMS: a regra em `_cabe()` saiu da
+QUOTA aprendida da base (`data/convencao_dm.json`), nao de uma recusa do
+validador. Nunca chegamos a testar `RelayTrip` num DJ.
+
+### Onde mexer quando for fazer
+
+`backend/make_casca.py`, funcao `_cabe()` — hoje ela recusa com
+*"dispositivo do tipo DJ nao carrega sinal 'X'"* quando `QUOTA[(tipo, tipo_sinal)]`
+e zero. Para a categoria C, liberar o par `(DJ, RelayTrip)` e `(DJ, Enabled)`.
+
+Atencao a duas coisas:
+
+1. A guarda de **papel fisico** (`_papel_fisico`) continua valendo: `SwitchStatus`
+   e um por dispositivo e `MeasuredValue` e um por (dispositivo, grandeza, fase).
+   `RelayTrip` nao esta em `_UNICO`, entao varios cabem no mesmo DJ — que e
+   exatamente o que se quer aqui.
+2. Se o validador do modelo recusar a combinacao, o plano B e rebaixar o
+   `Signal Type` para `Custom` (o que a base mostra funcionando) e **registrar
+   quais foram** — nao fazer isso em silencio.
+
+### Como medir o efeito
+
+`backend/futura_motivos.py` gera `CASCA_FUTURA_MOTIVOS.xlsx`: 712 sinais, um
+por linha, com a categoria e o motivo cru. Rodar antes e depois mostra
+exatamente quantos sairam da FUTURA.

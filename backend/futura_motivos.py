@@ -1,0 +1,196 @@
+"""
+futura_motivos.py — Por que cada sinal da TDT FUTURA nao entrou na ATUAL.
+
+Cruza TDT_CASCA_FUTURA.xlsx com a aba "19-Sem dispositivo no modelo" do
+relatorio e produz UMA LINHA POR SINAL, com a categoria, o motivo cru do
+gerador e o que precisa ser feito no modelo para o sinal entrar.
+
+Uso: python futura_motivos.py
+Saida: C:/Users/egnpo/Downloads/CASCA_FUTURA_MOTIVOS.xlsx
+"""
+from __future__ import annotations
+import collections
+from pathlib import Path
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+import excel_native
+
+DOWN = Path("C:/Users/egnpo/Downloads")
+FUT = DOWN / "TDT_CASCA_FUTURA.xlsx"
+REL = DOWN / "CASCA_RELATORIO.xlsx"
+OUT = DOWN / "CASCA_FUTURA_MOTIVOS.xlsx"
+HR = 4
+
+# categoria -> (rotulo curto, o que fazer no modelo)
+ACAO = {
+    "A": ("Falta o sufixo _NEW",
+          "O dispositivo EXISTE no Cas_Obra, so nao foi renomeado com _NEW. "
+          "Renomear o ID de Mapeamento SCADA — e o conserto mais barato."),
+    "B": ("Vao inteiro nao existe",
+          "Desenhar o vao no Cas_Obra (disjuntor, TC, TP, seccionadoras e "
+          "reles). E obra, nao e erro de mapeamento."),
+    "C": ("Rele especifico nao existe",
+          "Criar o rele da funcao no vao. Sem ele o sinal cai no disjuntor, "
+          "e disjuntor nao carrega RelayTrip/Enabled."),
+    "D": ("Papel fisico ja ocupado",
+          "O modelo tem MENOS equipamento que a lista (ex.: TR2AT so tem a "
+          "89-16 e a lista traz 89-20/22/24). Criar a chave/medidor que falta."),
+    "E": ("Medida de tensao sem TP",
+          "O vao tem TC mas nao tem TP. Tensao/frequencia/angulo nao podem "
+          "ficar num transformador de corrente."),
+    "Z": ("A conferir", "Motivo nao classificado — ver a coluna ao lado."),
+}
+
+
+def categoria(motivo: str | None, dm: str, renomear: set) -> str:
+    if motivo is None:
+        return "A" if dm in renomear else "Z"
+    if "nao tem equivalente" in motivo:
+        return "B"
+    if "nao carrega sinal" in motivo:
+        return "C"
+    if "ja tem um sinal" in motivo:
+        return "D"
+    if "CURRENTTR" in motivo or "nao pode ficar num TC" in motivo:
+        return "E"
+    if "GENERICO" in motivo:
+        return "C"
+    return "Z"
+
+
+def main():
+    # 1) os sinais da FUTURA
+    wb = openpyxl.load_workbook(FUT, read_only=True, data_only=True)
+    sinais = []
+    for sn in ("DNP3_DiscreteSignals", "DNP3_AnalogSignals",
+               "DNP3_DiscreteAnalog"):
+        if sn not in wb.sheetnames:
+            continue
+        linhas = list(wb[sn].iter_rows(values_only=True))
+        hdr = list(linhas[HR - 1])
+        ix = {n: i for i, n in enumerate(hdr) if n}
+        for r in linhas[HR:]:
+            nome = r[ix["Signal Name"]]
+            if not nome:
+                continue
+            sinais.append({
+                "nome": str(nome),
+                "aba": sn.replace("DNP3_", ""),
+                "dm": str(r[ix["Device Mapping"]] or ""),
+                "desc": str(r[ix.get("Description", 0)] or "")
+                        if "Description" in ix else "",
+                "in": r[ix["Input Coordinates"]]
+                      if "Input Coordinates" in ix else "",
+                "out": r[ix.get("Output Coordinates", 0)]
+                       if "Output Coordinates" in ix else "",
+            })
+    wb.close()
+
+    # 2) o motivo, do relatorio
+    wr = openpyxl.load_workbook(REL, read_only=True, data_only=True)
+    motivo = {}
+    for r in list(wr["19-Sem dispositivo no modelo"].iter_rows(
+            values_only=True))[1:]:
+        if r[4]:
+            motivo[str(r[4])] = str(r[6] or "")
+    renomear = {str(r[0]) for r in list(wr["21-FALTA renomear no modelo"]
+                                        .iter_rows(values_only=True))[1:] if r[0]}
+    wr.close()
+
+    for s in sinais:
+        m = motivo.get(s["nome"])
+        s["cat"] = categoria(m, s["dm"], renomear)
+        s["motivo"] = m or ("o dispositivo existe no modelo mas ainda sem _NEW"
+                            if s["cat"] == "A" else "")
+
+    # 3) planilha
+    wb = openpyxl.Workbook()
+    hdrf = Font(bold=True, color="FFFFFF")
+    hdrfill = PatternFill("solid", fgColor="1F4E78")
+    cor = {"A": "C6EFCE", "B": "FFC7CE", "C": "FFEB9C",
+           "D": "D9D9D9", "E": "BDD7EE", "Z": "FFFFFF"}
+
+    ws = wb.active
+    ws.title = "0-RESUMO"
+    c = collections.Counter(s["cat"] for s in sinais)
+    vao = collections.Counter(s["nome"].split("_")[1] for s in sinais)
+    linhas = [
+        ["POR QUE OS 712 SINAIS DA TDT FUTURA AINDA NAO ENTRARAM"], [],
+        ["Nenhum sinal da FUTURA esta ERRADO. Todos tem nome, index DNP3,"],
+        ["escala, descricao e comando corretos — sairam da mesma lista e"],
+        ["passaram pelas mesmas conferencias dos 570 da TDT ATUAL."], [],
+        ["O que falta e o DISPOSITIVO no Cas_Obra. No ADMS todo sinal precisa"],
+        ["apontar para um equipamento que existe; nao ha 'sinal solto' (ja"],
+        ["testamos apontar para a propria UTR e o ADMS recusa igual)."], [],
+        ["Cat", "Sinais", "%", "Situacao", "O que fazer no modelo"],
+    ]
+    tot = len(sinais)
+    for k in "ABCDEZ":
+        if c[k]:
+            linhas.append([k, c[k], f"{100*c[k]/tot:.1f}%",
+                           ACAO[k][0], ACAO[k][1]])
+    linhas += [[], ["SINAIS POR VAO"], ["Vao", "Sinais"]]
+    linhas += [[v, n] for v, n in vao.most_common()]
+    for r in linhas:
+        ws.append(r)
+    for row in ws.iter_rows():
+        for cel in row:
+            if cel.value in ("Cat", "Vao") and cel.column == 1:
+                for x in row:
+                    x.font = hdrf; x.fill = hdrfill
+    ws["A1"].font = Font(bold=True, size=13)
+    for col, w in zip("ABCDE", (10, 10, 8, 30, 78)):
+        ws.column_dimensions[col].width = w
+    ws.column_dimensions["E"].width = 78
+
+    ws = wb.create_sheet("1-SINAL A SINAL")
+    cabec = ["#", "Sinal", "Vao", "SIGLA", "Aba", "Descricao",
+             "Input", "Output", "Device Mapping que falta", "Cat",
+             "Situacao", "Motivo exato do gerador", "O que fazer"]
+    ws.append(cabec)
+    for cel in ws[1]:
+        cel.font = hdrf; cel.fill = hdrfill
+        cel.alignment = Alignment(vertical="center", wrap_text=True)
+    for i, s in enumerate(sorted(sinais, key=lambda s: (s["cat"], s["nome"])), 1):
+        pp = s["nome"].split("_")
+        ws.append([i, s["nome"], pp[1] if len(pp) > 1 else "",
+                   "_".join(pp[3:]) if len(pp) > 3 else "",
+                   s["aba"], s["desc"], s["in"], s["out"], s["dm"], s["cat"],
+                   ACAO[s["cat"]][0], s["motivo"], ACAO[s["cat"]][1]])
+        f = PatternFill("solid", fgColor=cor[s["cat"]])
+        for j in (10, 11):
+            ws.cell(ws.max_row, j).fill = f
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = f"A1:M{ws.max_row}"
+    for col, w in zip("ABCDEFGHIJKLM",
+                      (5, 30, 9, 10, 16, 42, 8, 8, 34, 5, 26, 80, 70)):
+        ws.column_dimensions[col].width = w
+
+    ws = wb.create_sheet("2-POR DISPOSITIVO")
+    ws.append(["Device Mapping que falta", "Sinais", "Vao", "Cat", "Situacao"])
+    for cel in ws[1]:
+        cel.font = hdrf; cel.fill = hdrfill
+    por = collections.Counter(s["dm"] for s in sinais)
+    catd = {s["dm"]: s["cat"] for s in sinais}
+    for dm, n in por.most_common():
+        pp = dm.split("_")
+        ws.append([dm, n, pp[1] if len(pp) > 1 else "", catd[dm],
+                   ACAO[catd[dm]][0]])
+        ws.cell(ws.max_row, 4).fill = PatternFill("solid",
+                                                  fgColor=cor[catd[dm]])
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:E{ws.max_row}"
+    for col, w in zip("ABCDE", (36, 9, 10, 6, 28)):
+        ws.column_dimensions[col].width = w
+
+    wb.save(OUT)
+    # resave_native trabalha com BYTES, nao com caminho
+    OUT.write_bytes(excel_native.resave_native(OUT.read_bytes()))
+    print(f"{OUT.name}: {len(sinais)} sinais, {len(por)} dispositivos")
+    for k in "ABCDEZ":
+        if c[k]:
+            print(f"  {k}  {c[k]:4} sinais  {ACAO[k][0]}")
+
+
+if __name__ == "__main__":
+    main()
