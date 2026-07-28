@@ -33,6 +33,8 @@ ITENS = [
     (DOWN / "TDT_CASCA_LT2.xlsx",                            "1-ENTREGA", False),
     (*_atual("RGE ADMS_Lista Pontos Casca_CORRIGIDA"),       "1-ENTREGA", False),
     (DOWN / "CASCA_RELATORIO.xlsx",                          "1-ENTREGA", True),
+    # por que cada sinal da FUTURA ainda nao entrou (um por linha)
+    (*_atual("CASCA_FUTURA_MOTIVOS"),                        "1-ENTREGA", False),
     (RAIZ / "CASCA_HANDOFF.md",                              ".",         True),
     # ── de onde saiu ──
     (DOWN / "RGE ADMS_Lista Pontos Casca.xlsx",  "2-ENTRADAS", True),
@@ -82,6 +84,8 @@ tomadas, as armadilhas ja pagas e o que fazer em seguida.
              - RGE ADMS_..._CORRIGIDA.xlsx ..... lista com o INDEX DNP3 arrumado
              - CASCA_RELATORIO.xlsx ............ 24 abas; comece pela
                "0-O QUE FALTA" e depois a "20-Historico de erros"
+             - CASCA_FUTURA_MOTIVOS.xlsx ....... os 306 sinais da FUTURA, um
+               por linha, com o motivo exato de nao estar na ATUAL
 
 2-ENTRADAS/  os arquivos que produziram a entrega
              - RGE ADMS_Lista Pontos Casca.xlsx  fonte dos SINAIS
