@@ -1355,3 +1355,58 @@ TDT FUTURA            301   (282 sem rele, 16 papel ocupado, 3 tensao sem TP)
 colisoes de papel       0   nas tres
 check_casca.py         OK
 ```
+
+
+## 27. CORRECAO DE NOMENCLATURA: P_ e A_ sao PRINCIPAL e ALTERNADO
+
+**29/07/2026, correcao do usuario:** *"nao e variante pickup e alarme. e rele
+alternado e principal"*.
+
+Durante todo o projeto eu tratei o prefixo `P_`/`A_` como "pickup" e "alarme" —
+duas variantes de INFORMACAO do mesmo sinal. Errado. Sao os **dois reles de
+protecao do vao**: `P_` = rele PRINCIPAL, `A_` = rele ALTERNADO (retaguarda).
+Equipamentos fisicos distintos, cada um com sua propria funcao 51F, 50F etc.
+
+A diferenca importa: com a leitura errada, "pickup e alarme do mesmo codigo"
+parecia redundancia a ser resolvida; na leitura certa, sao duas protecoes
+independentes que TEM MESMO que existir separadas no modelo.
+
+A arvore do ADMS mostra a estrutura real:
+
+```
+CAS_LTSCO_LTSCO_P_PROT              <- o rele PRINCIPAL (dispositivo)
+   CAS_LTSCO_52-1_P_67FT            <- sinais pendurados no proprio rele
+   CAS_LTSCO_52-1_P_FA / P_FB / P_FC
+   CAS_LTSCO_LTSCO_P_PROT_51N1      <- ESTAGIOS do rele (objetos proprios)
+   CAS_LTSCO_LTSCO_P_PROT_5FA / 5FB / 5FC
+CAS_LTSCO_LTSCO_PROT                <- o rele sem prefixo, com 45 estagios
+```
+
+### A regra de roteamento (usuario, 29/07/2026)
+
+> "o que nao tiver rele proprio e for principal, fica no p_prot, mesma coisa
+> pra auxiliar, pro resto das protecoes no prot normal e o restante que nao e
+> prot no disjuntor — serve tanto pra lt quanto pra al"
+
+Ordem de tentativa, ja implementada:
+
+1. **estagio proprio** — `CAS_<vao>_<dev>_P_PROT_<sigla>` se existir no modelo
+2. **generico do prefixo** — `P_PROT` (principal) ou `A_PROT` (alternado)
+3. **`PROT` sem prefixo** — quando o vao nao tem P_PROT/A_PROT (caso dos AL)
+4. **disjuntor** — o que nao e protecao (MOLA, SF6A, 43LR, CCFL, OI, DJF1)
+
+### O inventario que explica os 220 pendentes
+
+```
+vao      rele            estagios que existem
+LTSCO    PROT (sem pref)  45   21F 21FA 21Z2 50F1 51F 62BF 67FT 81SU ...
+LTSCO    P_PROT            4   51N1, 5FA, 5FB, 5FC
+LTSCO    A_PROT            4   51N1, 5FA, 5FB, 5FC
+```
+
+O rele sem prefixo esta completo; o principal e o alternado tem so quatro
+estagios cada. Os sinais `P_50F`, `P_51F`, `A_67FT` etc. nao tem estagio
+proprio, caem no generico `P_PROT`/`A_PROT` — e ali batem no teto de 4
+sinais por dispositivo. Por isso 220 continuam de fora.
+
+Nao e erro de mapeamento: **faltam os estagios no modelo**.

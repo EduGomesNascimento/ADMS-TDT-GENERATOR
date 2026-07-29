@@ -884,7 +884,8 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
          "RESOLVIDO"],
         ["16", "Gerador (bug meu)", "Same signal CAS_TR2AT_TR2AT_51N1 already "
          "mapped on device CAS_TR2AT_TR2AT_PROT_51N1",
-         "PICKUP (P_) e ALARME (A_) tem dispositivo PROPRIO na CASCA — "
+         "PRINCIPAL (P_) e ALTERNADO (A_) sao os DOIS RELES do vao, cada um "
+         "com dispositivo PROPRIO na CASCA — "
          "CAS_LTPRI_LTPRI_P_51N1 vai para ..._P_PROT_51N1, nao para "
          "..._PROT_51N1. Eu mandava os dois para o mesmo rele, e o segundo "
          "batia de frente com o primeiro.",
@@ -913,7 +914,7 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
          "RESOLVIDO"],
         ["20", "Gerador (bug meu)", "Same signal CAS_TR7AT_TR7AT_A_51N1 "
          "already mapped on device CAS_TR2AT_TR2AT_PROT_51N1  (39 sinais)",
-         "PICKUP e ALARME aparecem no NOME (CAS_TR7AT_TR7AT_P_51N1), mas a "
+         "PRINCIPAL e ALTERNADO aparecem no NOME (CAS_TR7AT_TR7AT_P_51N1), mas a "
          "coluna SIGLA da lista traz so '51N1'. Eu lia a coluna, entao P_ e A_ "
          "iam para o MESMO rele. A CASCA tem dispositivo proprio para cada um: "
          "..._P_PROT_51N1 e ..._A_PROT_51N1.",
@@ -934,7 +935,7 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
         ["22", "Gerador", "Same signal CAS_TR6_TR6_A_87A already mapped on "
          "device CAS_TR1_TR1_PROT  (17 sinais)",
          "Quando o rele ESPECIFICO nao existia, eu rebaixava para o rele "
-         "GENERICO do vao (_PROT). So que pickup e alarme do mesmo codigo caem "
+         "GENERICO do vao (_PROT). So que principal e alternado do mesmo codigo caem "
          "no mesmo slot ali, e o ADMS recusa o segundo.",
          "O rele generico NAO recebe sinal: na TDT atual da CASCA ZERO sinais "
          "apontam para um _PROT sem codigo — ele e contêiner dos reles "
@@ -1193,9 +1194,9 @@ def gerar_relatorio(pts, mapa, dups, semidx, sem_tpl, nomes_dup, renomeados=(),
     sheet("11-DM origem (resumo)",
           ["Origem", "Qtde", "O que significa"],
           [[o, n, {"TDT atual": "sigla existe na TDT atual da CASCA — regra copiada",
-                   "TDT atual (base)": "pickup/alarme: seguiu a sigla base da TDT atual",
+                   "TDT atual (base)": "principal/alternado: seguiu a sigla base da TDT atual",
                    "familia": "sigla da mesma familia (medida/trafo/secc/religador)",
-                   "pickup/alarme": "P_/A_ de codigo ANSI -> {P|A}_PROT_{codigo}",
+                   "principal/alternado": "P_/A_ de codigo ANSI -> {P|A}_PROT_{codigo}",
                    "medida": "grandeza eletrica -> TC (corrente/potencia) ou TP (tensao)",
                    "ANSI": "codigo ANSI -> rele do proprio device (PROT_)",
                    "device": "pelo equipamento: 52-*=DJ, 89-*/29-*=SEC",
@@ -1474,7 +1475,7 @@ def main():
             return (dm_alvo, sig_type, med, fases)
         if sig_type in ("RelayTrip", "Enabled") and sigla:
             # codigo ANSI da sigla: 81E1/81SU -> 81, 50F1 -> 50, 5FA -> 5.
-            # O prefixo P_/A_ NAO separa: no TR1, que so tem o _PROT, o pickup
+            # O prefixo P_/A_ NAO separa: no TR1, que so tem o _PROT, o do
             # e o alarme do 87 caem no mesmo relé e o ADMS recusa o segundo.
             _m = re.match(r"^(?:[PA]_)?(\d+)", sigla)
             if _m:
@@ -1580,7 +1581,7 @@ def main():
             _pp = p["nome"].split("_")            # device REAL, p/ o Device Mapping
             alias = _pp[0]; mod = _pp[1] if len(_pp) > 1 else ""
             dev = _pp[2] if len(_pp) > 2 else ""
-            # PICKUP e ALARME aparecem no NOME (CAS_TR7AT_TR7AT_P_51N1), nao na
+            # PRINCIPAL e ALTERNADO aparecem no NOME (CAS_TR7AT_TR7AT_P_51N1), nao na
             # coluna SIGLA da lista (que traz so '51N1'). Sem isso os dois vao
             # para o MESMO rele e o ADMS recusa o segundo. A CASCA tem
             # dispositivo proprio: ..._P_PROT_51N1 e ..._A_PROT_51N1.

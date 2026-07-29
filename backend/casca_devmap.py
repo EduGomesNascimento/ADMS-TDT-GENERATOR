@@ -139,7 +139,7 @@ _DEGRADA = {
 # última tentativa: qualquer dispositivo do vão, nesta ordem de preferência
 # O rele GENERICO (_PROT, _P_PROT, _A_PROT) NAO entra: na TDT atual da CASCA
 # ZERO sinais apontam para ele — e contêiner dos reles especificos, nao alvo de
-# sinal. Empilhar pickup e alarme nele era o que sobrava de "already mapped".
+# sinal. Empilhar principal e alternado nele era o que sobrava de "already mapped".
 _ULTIMO_RECURSO = ("DJ", "SEC", "TR", "BP", "BT", "TC", "TP", "RET")
 _GENERICO = {"PROT", "P_PROT", "A_PROT"}
 
@@ -270,7 +270,7 @@ def sufixo(sig: str, device: str) -> tuple[str, str]:
       2) familia conhecida (medida, trafo, seccionadora, religador)
       3) BASE COMPLETA (27 subestacoes) — 2692 siglas
       4) TDT da CASCA com 1 ocorrencia so
-      5) pickup/alarme, medida, tipo do equipamento, codigo ANSI
+      5) principal/alternado, medida, tipo do equipamento, codigo ANSI
     O passo 4 vem DEPOIS da base de proposito: uma amostra unica da CASCA nao
     deve derrubar a convencao de 27 subestacoes. Foi o que acontecia com o
     '81' — a CASCA tem UM caso (CAS_LTPRI_LTPRI_81 -> PROT_81SU) e a base
@@ -287,15 +287,16 @@ def sufixo(sig: str, device: str) -> tuple[str, str]:
         return base[sig], "base completa"
     if sig in tab:
         return tab[sig][0], "TDT atual (1 caso)"
-    # PICKUP (P_) e ALARME (A_) tem dispositivo PROPRIO na CASCA:
+    # PRINCIPAL (P_) e ALTERNADO (A_) sao os DOIS RELES do vao, cada um com
+    # dispositivo PROPRIO na CASCA:
     #   CAS_LTPRI_LTPRI_P_51N1 -> CAS_LTPRI_LTPRI_P_PROT_51N1
     #   CAS_LTPRI_LTPRI_A_51N1 -> CAS_LTPRI_LTPRI_A_PROT_51N1
-    # Mandar o pickup para o mesmo PROT_51N1 do trip faz o ADMS recusar com
+    # Mandar o do principal para o mesmo PROT_51N1 faz o ADMS recusar com
     # "Same signal ... was already mapped on device".
     if len(sig) > 2 and sig[:2] in ("P_", "A_"):
         resto = sig[2:]
         if resto[:1].isdigit():
-            return f"{sig[0]}_PROT_{resto}", "pickup/alarme"
+            return f"{sig[0]}_PROT_{resto}", "principal/alternado"
         if resto in tab:
             return tab[resto][0], "TDT atual (base)"
         for fam, suf in _FAM:
@@ -739,7 +740,8 @@ def rele_generico_do_vao(mod: str, prefixo: str = "",
     Regra do usuario (28/07/2026): *"o que for protecao joga dentro de PROT
     ex CAS_LTSCO_LTSCO_PROT_NEW, o que for solto direto no disjuntor"*.
 
-    `prefixo` e 'P' (pickup) ou 'A' (alarme) — eles tem dispositivo proprio
+    `prefixo` e 'P' (PRINCIPAL) ou 'A' (ALTERNADO) — sao os DOIS reles de
+    protecao do vao, cada um com dispositivo proprio
     (`..._P_PROT`, `..._A_PROT`), mas so nas tres linhas de 138 kV. Onde o
     especifico nao existe, cai no `_PROT` comum.
 
