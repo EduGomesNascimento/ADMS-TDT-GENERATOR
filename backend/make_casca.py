@@ -1449,6 +1449,7 @@ def main():
     # conjunto proprio, para nao interferir na ATUAL/FUTURA
     ocupado_dj = set()
     usado_dj = Counter()
+    fora_escopo = []
     realoc_dj = []
     sem_dj = []
 
@@ -1539,6 +1540,13 @@ def main():
                 continue
             # Device Mapping resolvido ANTES de montar a linha: no modo estrito
             # o sinal sem alvo no catalogo da CASCA nao entra na TDT.
+            # vao FORA DE ESCOPO (TSA2 e futuro): nao entra na TDT. A linha
+            # continua recebendo coordenada na lista corrigida, para nao
+            # baguncar o enderecamento DNP3.
+            _v0 = p["nome"].split("_")[1] if "_" in p["nome"] else ""
+            if _v0 in devmap.FORA_DE_ESCOPO:
+                fora_escopo.append(p)
+                continue
             na_utr = False
             dm_dj = None          # alternativa da ATUAL_COMPLETA (disjuntor)
             dm_dj_nota = ""
@@ -1634,11 +1642,19 @@ def main():
                     _sufi, _ = devmap.sufixo(sigla_ef, dev)
                     _ehprot = _sufi.startswith(("PROT", "P_PROT", "A_PROT"))
                     _pref = _pp[3] if len(_pp) > 4 and _pp[3] in ("P", "A") else ""
-                    _cands = []
+                    # PROTECAO NAO TRANSBORDA PARA O DISJUNTOR. Medido no
+                    # import 'erros1000': o _PROT aceitou 5 de 5 em TODOS os
+                    # vaos, enquanto o disjuntor aceitou 2 de 5 (e 1 de 5 nos
+                    # alimentadores) — as 46 falhas eram justamente o excedente
+                    # que eu mandava para o DJ por conta propria. A regra do
+                    # usuario nao previa isso: "o que for protecao joga dentro
+                    # de PROT, o que for SOLTO direto no disjuntor". Quem nao
+                    # cabe no _PROT espera o rele especifico (aba 3-CRIAR).
                     if _ehprot:
-                        _cands.append(devmap.rele_generico_do_vao(
-                            mod, _pref, DM_SUFIXO))
-                    _cands.append(devmap.disjuntor_do_vao(mod, dev, DM_SUFIXO))
+                        _cands = [devmap.rele_generico_do_vao(
+                            mod, _pref, DM_SUFIXO)]
+                    else:
+                        _cands = [devmap.disjuntor_do_vao(mod, dev, DM_SUFIXO)]
                     _por_ultimo = ""
                     for _alvo, _nalvo in _cands:
                         if not _alvo:
@@ -1899,6 +1915,10 @@ def main():
         print("  (TDT anterior aberta no Excel — gravada como _NOVA)")
     print(f"TDT: {destino.name} | {dict(gerados)} | container={CONTAINER} | "
           f"pulados (sem template): {len(pulados)}")
+    if fora_escopo:
+        _fe = Counter(x["nome"].split("_")[1] for x in fora_escopo)
+        print(f"FORA DE ESCOPO (nao entram na TDT): {len(fora_escopo)} sinais "
+              f"— {dict(_fe)}")
     for p in pulados[:20]:
         print(f"   PULADO {p['sheet']}!L{p['linha']} {p['tipo']} {p['sigla']} {p['nome']}")
 

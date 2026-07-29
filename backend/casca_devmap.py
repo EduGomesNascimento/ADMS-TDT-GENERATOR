@@ -143,6 +143,13 @@ _DEGRADA = {
 _ULTIMO_RECURSO = ("DJ", "SEC", "TR", "BP", "BT", "TC", "TP", "RET")
 _GENERICO = {"PROT", "P_PROT", "A_PROT"}
 
+# Vaos FORA DE ESCOPO: existem na lista mas ainda nao existem no campo, entao
+# nao interessam a esta TDT. "tsa2 e futuro, nao existe ainda. entao nao e do
+# nosso interesse" (usuario, 29/07/2026). Os sinais continuam recebendo
+# coordenada na lista corrigida (para nao baguncar o enderecamento), mas saem
+# da TDT e das listas de 'o que criar no modelo'.
+FORA_DE_ESCOPO = {"TSA2"}
+
 _CACHE = {}
 
 
