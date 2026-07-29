@@ -1447,17 +1447,38 @@ def main():
     ocupado_fis = set()
     # papeis ja ocupados NO DISJUNTOR pela realocacao da ATUAL_COMPLETA —
     # conjunto proprio, para nao interferir na ATUAL/FUTURA
-    ocupado_dj = set()
+    # MESMO conjunto da ATUAL: separar os dois foi o que deixou
+    # VB_B entrar num TP que ja tinha VB_L na mesma fase.
     usado_dj = Counter()
     fora_escopo = []
     realoc_dj = []
     sem_dj = []
 
-    def _papel_fisico(dm_alvo, sig_type, med, fases):
+    def _papel_fisico(dm_alvo, sig_type, med, fases, sigla=""):
+        """Chave do PAPEL que o sinal ocupa no dispositivo. Duas linhas com a
+        mesma chave nao cabem no mesmo dispositivo — o ADMS responde
+        "Same signal X ... was already mapped on device ... in same mapping
+        action".
+
+        UM SINAL POR FUNCAO ANSI POR RELE. Medido no import 'erros999': das
+        690 linhas so 10 falharam, e todas eram par de MESMA funcao —
+        81SU x 81E1 (ANSI 81) em seis vaos, P_87_T x A_87_T (ANSI 87) no TR1
+        e no TR2, VB_B x VB_L (tensao da mesma fase) em dois TPs.
+        FA/FB/FC passam juntos porque sao FASES, funcoes distintas; por isso
+        o limite nunca foi "5 por dispositivo" — os 5 que eu media eram
+        quantas funcoes distintas cabiam por acaso.
+        """
         if sig_type in _UNICO:
             return (dm_alvo, sig_type)
         if sig_type == "MeasuredValue":
             return (dm_alvo, sig_type, med, fases)
+        if sig_type in ("RelayTrip", "Enabled") and sigla:
+            # codigo ANSI da sigla: 81E1/81SU -> 81, 50F1 -> 50, 5FA -> 5.
+            # O prefixo P_/A_ NAO separa: no TR1, que so tem o _PROT, o pickup
+            # e o alarme do 87 caem no mesmo relé e o ADMS recusa o segundo.
+            _m = re.match(r"^(?:[PA]_)?(\d+)", sigla)
+            if _m:
+                return (dm_alvo, sig_type, "ANSI" + _m.group(1))
         return None
 
     # Grandezas de TENSAO nao podem ficar num TC. O validador do ADMS:
@@ -1548,6 +1569,7 @@ def main():
                 fora_escopo.append(p)
                 continue
             na_utr = False
+            forca_futura = False  # canonico que existe mas ja tem esse papel
             dm_dj = None          # alternativa da ATUAL_COMPLETA (disjuntor)
             dm_dj_nota = ""
             # o que o molde diz do sinal — precisa estar disponivel mesmo
@@ -1597,7 +1619,8 @@ def main():
                 if dm_base is not None:
                     _cb, _por = _cabe(f"{dm_base}{DM_SUFIXO}", _st, _g("Measurement Type"))
                     _pf = _papel_fisico(f"{dm_base}{DM_SUFIXO}", _st,
-                                        _g("Measurement Type"), _g("Phases"))
+                                        _g("Measurement Type"), _g("Phases"),
+                                        sigla_ef)
                     if _cb and _pf is not None and _pf in ocupado_fis:
                         _cb, _por = False, (f"{dm_base}{DM_SUFIXO} ja tem um sinal "
                                             f"'{_st}' neste papel (uma chave tem uma "
@@ -1614,7 +1637,8 @@ def main():
                         if _b2:
                             _c2, _p2 = _cabe(f"{_b2}{DM_SUFIXO}", _st, _g("Measurement Type"))
                             _f2 = _papel_fisico(f"{_b2}{DM_SUFIXO}", _st,
-                                                _g("Measurement Type"), _g("Phases"))
+                                                _g("Measurement Type"), _g("Phases"),
+                                                sigla_ef)
                             if _c2 and (_f2 is None or _f2 not in ocupado_fis):
                                 dm_base, dm_o, _pf, _ok2 = _b2, _n2, _f2, True
                         if not _ok2:
@@ -1662,8 +1686,8 @@ def main():
                             continue
                         # papel fisico e COTA MEDIDA no retorno do ADMS
                         _pfd = _papel_fisico(_alvo, _st, _g("Measurement Type"),
-                                             _g("Phases"))
-                        if _pfd is not None and _pfd in ocupado_dj:
+                                             _g("Phases"), sigla_ef)
+                        if _pfd is not None and _pfd in ocupado_fis:
                             _por_ultimo = f"{_alvo} ja tem esse papel fisico"
                             continue
                         _lim = COTA_IMPORT.get(
@@ -1676,7 +1700,7 @@ def main():
                         dm_dj, dm_dj_nota = _alvo, _nalvo
                         usado_dj[(_alvo, _st)] += 1
                         if _pfd is not None:
-                            ocupado_dj.add(_pfd)
+                            ocupado_fis.add(_pfd)
                         break
                     if not dm_dj:
                         sem_dj.append([p["nome"], p["sigla"], _st, _por_ultimo])
@@ -1688,7 +1712,7 @@ def main():
                     _tp, _ntp = devmap.tp_do_vao(mod, DM_SUFIXO)
                     if _tp:
                         _pft = _papel_fisico(_tp, _st, _g("Measurement Type"),
-                                             _g("Phases"))
+                                             _g("Phases"), sigla_ef)
                         if _pft is None or _pft not in ocupado_fis:
                             dm_base = _tp[:-len(DM_SUFIXO)] if DM_SUFIXO and \
                                 _tp.endswith(DM_SUFIXO) else _tp
@@ -1710,6 +1734,20 @@ def main():
                         dm_base, dm_o, na_utr = RU, "na UTR (sem dispositivo)", True
                     else:
                         dm_base, dm_o, na_utr = _canon, f"CRIAR: {dm_o}", False
+                        # ARMADILHA: as vezes o nome CANONICO ja EXISTE no
+                        # modelo. O CAS_LTSCO_LTSCO_VB_L pede um TP; o canonico
+                        # dele e CAS_LTSCO_LTSCO_TP, que existe — e o split
+                        # entao mandava o sinal para a ATUAL sem reconsultar a
+                        # ocupacao, furando a guarda de papel. Era a origem das
+                        # duas ultimas falhas do import ('VB_B x VB_L' no TP).
+                        _pfc = _papel_fisico(f"{_canon}{DM_SUFIXO}", _st,
+                                             _g("Measurement Type"),
+                                             _g("Phases"), sigla_ef)
+                        if _pfc is not None and _pfc in ocupado_fis:
+                            forca_futura = True
+                        elif _pfc is not None and \
+                                f"{_canon}{DM_SUFIXO}" in devmap.modelo_new()[0]:
+                            ocupado_fis.add(_pfc)
             else:
                 dm_base, dm_o, dm_pend = devmap.resolver(p["nome"], p["sigla"])
             # NOME final (2ª ocorrência de um nome repetido leva sufixo no device)
@@ -1803,7 +1841,8 @@ def main():
                         if c and c - 1 < len(ref):
                             row[c - 1] = ref[c - 1]
             rows.append(row)
-            _existe = f"{dm_base}{DM_SUFIXO}" in devmap.modelo_new()[0]
+            _existe = (f"{dm_base}{DM_SUFIXO}" in devmap.modelo_new()[0]
+                       and not forca_futura)
             split_rows[sheet]["atual" if _existe else "futura"].append(row)
             # ── ATUAL_COMPLETA ──────────────────────────────────────────────
             # o que ja tem dispositivo entra igual; o que so tinha o rele

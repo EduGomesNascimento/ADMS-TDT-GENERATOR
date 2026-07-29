@@ -15,6 +15,7 @@ import collections
 import re
 from pathlib import Path
 import openpyxl
+import casca_devmap as devmap
 
 D = Path("C:/Users/egnpo/Downloads")
 
@@ -111,7 +112,15 @@ def ler_lista():
             tipo = str(gv("TIPO") or "").strip()
             if tipo not in ("D", "A", "C", "A/D"):
                 continue
+            _n = _norm_vao(_norm_alias(str(gv("NOME") or "").strip()))
+            # Vao FORA DE ESCOPO (TSA2 e futuro): nao entra na TDT, mas
+            # CONTINUA ocupando coordenada na lista — foi assim que o gerador
+            # fez, para nao deslocar o enderecamento dos demais pontos. Por
+            # isso ele e MARCADO, nao descartado: some das conferencias que
+            # comparam com a TDT e permanece na checagem de contiguidade.
+            _fora = bool(_n.split("_")[1:2]) and                 _n.split("_")[1] in devmap.FORA_DE_ESCOPO
             pts.append({
+                "fora": _fora,
                 "sheet": sn, "linha": r, "tipo": tipo,
                 "sigla": str(gv("SIGLA SINAL") or "").strip(),
                 "nome": _norm_vao(_norm_alias(str(gv("NOME") or "").strip())),
@@ -319,7 +328,7 @@ def main():
     faltando, divergentes = [], []
     usados = set()          # cada sinal da TDT casa com UMA linha da lista
     for p in pts:
-        if not p["usado"] or p["tipo"] == "C" or not p["sigla"]:
+        if not p["usado"] or p["tipo"] == "C" or not p["sigla"] or p["fora"]:
             continue
         # nome repetido: o 2º+ vira CAS_MOD_DEV-2_SIGLA na TDT
         pn = p["nome"].split("_")
@@ -370,7 +379,7 @@ def main():
     casado = {}
     usados2 = set()
     for p in pts:
-        if not p["usado"] or p["tipo"] == "C" or not p["sigla"]:
+        if not p["usado"] or p["tipo"] == "C" or not p["sigla"] or p["fora"]:
             continue
         pn = p["nome"].split("_")
         cands = ([p["nome"]] + ["_".join(pn[:2] + [f"{pn[2]}-{k}"] + pn[3:])
@@ -386,18 +395,19 @@ def main():
     # comando da lista: linha C com o MESMO NOME de uma linha D
     cmds = {}
     for p in pts:
-        if p["tipo"] == "C" and p["usado"] and p["sigla"]:
+        if p["tipo"] == "C" and p["usado"] and p["sigla"] and not p["fora"]:
             cmds.setdefault(p["nome"], p)
     ok = errado = pulados_cmd = 0
     por_mod_sigla = {}
     for p in pts:
-        if p["usado"] and p["tipo"] == "D":
+        if p["usado"] and p["tipo"] == "D" and not p["fora"]:
             pn = p["nome"].split("_")
             por_mod_sigla.setdefault((pn[1] if len(pn) > 1 else "", p["sigla"]), p)
     portador = {}          # NOME do comando -> sinal da TDT que o carrega
     for nome, c in cmds.items():
         alvo = next((p for p in pts
-                     if p["usado"] and p["tipo"] == "D" and p["nome"] == nome), None)
+                     if p["usado"] and p["tipo"] == "D" and not p["fora"]
+                     and p["nome"] == nome), None)
         if alvo is not None:
             sig_nome = casado.get((alvo["sheet"], alvo["linha"]))
         else:
@@ -478,7 +488,8 @@ def main():
 
     print("=== 7) CONTAGEM POR ABA ===")
     esperado = collections.Counter(
-        p["sheet"] for p in pts if p["usado"] and p["tipo"] != "C" and p["sigla"]
+        p["sheet"] for p in pts if p["usado"] and p["tipo"] != "C"
+        and p["sigla"] and not p["fora"]
         # com DM_NA_UTR o sinal sem dispositivo ENTRA na TDT (mapeado na UTR),
         # entao so desconta o que realmente ficou de fora
         and not ((p["sheet"], p["linha"]) in fora_ok

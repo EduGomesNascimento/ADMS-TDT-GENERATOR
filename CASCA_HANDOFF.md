@@ -1281,3 +1281,77 @@ exatamente o efeito desejado (o 52-04 recebeu 113).
 O plano B continua sendo rebaixar o `Signal Type` para `Custom` (a base mostra
 49 `Custom` num unico DJ) — mas **registrando quais foram**, nunca em silencio.
 Chave `C_NO_DISJUNTOR` em `make_casca.py` desliga tudo.
+
+## 26. A regra de verdade: UM SINAL POR FUNCAO ANSI POR DISPOSITIVO
+
+Quatro imports foram necessarios para achar isto, e as tres primeiras versoes
+da regra estavam ERRADAS. Vale registrar as quatro, porque cada uma parecia
+certa com o dado da epoca.
+
+| import | ok/falhas | regra que eu acreditava | por que estava errada |
+|---|---|---|---|
+| ERROS 98 | 636/230 | "o DJ nao carrega RelayTrip" | carrega; deduzi da base das 27 SEs, onde ninguem faz isso — convencao, nao trava |
+| ERROS 95 | 680/186 | "o limite e 5 por dispositivo" | os 5 eram quantas FUNCOES distintas cabiam, por acaso |
+| erros1000 | 691/46 | "o _PROT tambem limita em 5" | mesmo artefato, outro dispositivo |
+| erros999 | 680/10 | **um por funcao ANSI por dispositivo** | bate nas 10 falhas sem excecao |
+
+### A evidencia final
+
+As 10 falhas do ultimo import, todas par de MESMA funcao:
+
+```
+81SU   x 81E1     ANSI 81    6 casos (AL12..AL15, AL21, TRF1)
+P_87_T x A_87_T   ANSI 87    2 casos (TR1, TR2)
+VB_B   x VB_L     tensao/fase B   2 casos (LTSCO, LTPRI)
+```
+
+No DJ do LTSCO havia 27 sinais `RelayTrip` com Signal Type e Message Mapping
+IDENTICOS e 5 passaram. `FA`/`FB`/`FC` passam juntos porque sao FASES —
+funcoes distintas. `81E1` e `81SU` sao ambos ANSI 81 e brigam pelo mesmo slot.
+O prefixo `P_`/`A_` NAO separa: nas LTs eles vao para `_P_PROT` e `_A_PROT` e
+nao se encontram, mas no TR1, que so tem o `_PROT`, colidem.
+
+Implementado em `_papel_fisico()`: a chave passou a incluir `ANSI<codigo>`
+para `RelayTrip` e `Enabled`.
+
+### O que me tirou do erro
+
+Olhar **por dispositivo** em vez de agregado. `_PROT` 5/5 e DJ 2/5 na mesma
+tabela deixou obvio que o problema nao era o tipo de sinal.
+
+### Os quatro bugs de contagem, todos com a mesma assinatura
+
+Duas partes do codigo decidindo sozinhas sobre o MESMO recurso:
+
+1. **`ocupado_dj` x `ocupado_fis`** — a realocacao contava ocupacao separada da
+   ATUAL. O TP aceitou `VB_B` porque nao enxergava o `VB_L` que a ATUAL ja
+   tinha posto la.
+2. **cota como teto x piso** — gravei "1 observado" como se fosse limite;
+   `PROT|RelayTrip=1` bloqueou o `_PROT` antes de ele ser testado.
+3. **transbordo para o disjuntor** — fallback que EU inventei, fora da regra do
+   usuario ("protecao no PROT, solto no disjuntor"). Eram as 46 falhas.
+4. **canonico que ja existe** — o mais sutil. O ramo do nome CANONICO foi
+   escrito para sinais cujo dispositivo NAO existe: ele responde "o que criar".
+   Quando o nome calculado calha de ja existir (`CAS_LTSCO_LTSCO_TP`), o split
+   ve "dispositivo existe" e manda para a ATUAL **sem reconsultar a ocupacao**.
+   Funcionou 148 vezes porque nos outros casos o canonico e um rele inexistente
+   mesmo. Corrigido com a flag `forca_futura`.
+
+### TSA2 fora de escopo — marcar, nao descartar
+
+"tsa2 e futuro, nao existe ainda, entao nao e do nosso interesse". Os sinais
+saem da TDT, mas **continuam ocupando coordenada na lista corrigida**: remove-los
+deslocaria todos os analogicos seguintes e quebraria os enderecos que a UTR ja
+usa. Por isso `check_casca.py` os MARCA (`"fora": True`) em vez de descartar —
+eles somem das conferencias contra a TDT e permanecem na checagem de
+contiguidade. Descartar teria escondido o buraco em vez de explica-lo.
+
+### Estado
+
+```
+TDT ATUAL             582
+TDT ATUAL_COMPLETA    735   (582 + 153 realocados no _PROT / disjuntor)
+TDT FUTURA            301   (282 sem rele, 16 papel ocupado, 3 tensao sem TP)
+colisoes de papel       0   nas tres
+check_casca.py         OK
+```
