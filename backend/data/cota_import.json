@@ -1,4 +1,6 @@
 {
  "DJ|Enabled": 1,
- "DJ|Local": 1
+ "DJ|Local": 1,
+ "DJ|RelayTrip": 4,
+ "PROT|RelayTrip": 4
 }
