@@ -193,6 +193,34 @@ def main():
                       (5, 30, 9, 10, 16, 42, 8, 8, 34, 5, 26, 12, 32, 80, 70)):
         ws.column_dimensions[col].width = w
 
+    # ── o que sobrou: nem a ATUAL_COMPLETA achou lugar ────────────────────
+    # Aqui nao ha jeito por mapeamento: o dispositivo tem que ser CRIADO.
+    # O ADMS aceita no maximo 5 sinais 'RelayTrip' por dispositivo (medido em
+    # dois imports, ver data/cota_import.json), entao encher o _PROT generico
+    # ou o disjuntor tem teto.
+    ws = wb.create_sheet("3-CRIAR (o que sobrou)")
+    ws.append(["Dispositivo a CRIAR no Cas_Obra", "Sinais que dependem", "Vao",
+               "Tipo", "Exemplos de sinal"])
+    for cel in ws[1]:
+        cel.font = hdrf; cel.fill = hdrfill
+    falta = collections.defaultdict(list)
+    for s in sinais:
+        if not completa.get(s["nome"]):
+            falta[s["dm"]].append(s["nome"])
+    for dm, ns in sorted(falta.items(), key=lambda x: -len(x[1])):
+        pp = dm.split("_")
+        t = "Rele de protecao" if "_PROT" in dm else (
+            "Disjuntor" if dm.endswith(("_DJ", "_DJ_NEW")) else
+            "Seccionadora" if "_SEC" in dm else
+            "Transformador de potencial" if "_TP" in dm else
+            "Transformador de corrente" if "_TC" in dm else "?")
+        ws.append([dm, len(ns), pp[1] if len(pp) > 1 else "", t,
+                   ", ".join(ns[:3])])
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:E{ws.max_row}"
+    for col, w in zip("ABCDE", (38, 9, 10, 26, 60)):
+        ws.column_dimensions[col].width = w
+
     ws = wb.create_sheet("2-POR DISPOSITIVO")
     ws.append(["Device Mapping que falta", "Sinais", "Vao", "Cat", "Situacao"])
     for cel in ws[1]:

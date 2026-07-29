@@ -1,4 +1,8 @@
 {
- "DJ|RelayTrip": 2,
+ "DJ|Enabled": 1,
+ "DJ|Local": 1,
+ "DJ|RelayTrip": 5,
+ "PROT|RelayTrip": 5,
+ "SEC|SwitchStatus": 1,
  "TP|MeasuredValue": 3
 }

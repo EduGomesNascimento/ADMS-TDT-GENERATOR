@@ -76,9 +76,25 @@ def main(csv_path: str, tdt_path: str):
     # como teto impediu o roteamento para o _PROT generico.
     confirmada = {k: v for k, v in cota.items() if k in forcado}
 
+    # ACUMULA com o que ja se sabia. Um limite confirmado num import continua
+    # valendo no proximo, mesmo que la ninguem tenha chegado nele — foi o que
+    # aconteceu com DJ|RelayTrip=5: depois que o gerador passou a respeita-lo,
+    # o import seguinte nao forcou mais o disjuntor e o limite sumiria daqui.
+    # Entre dois valores confirmados vale o MENOR (o teto mais apertado).
+    antes = {}
+    if OUT.exists():
+        antes = json.loads(OUT.read_text(encoding="utf-8"))
+    novos = [k for k in confirmada if k not in antes]
+    for k, v in antes.items():
+        confirmada[k] = min(confirmada[k], v) if k in confirmada else v
+
     DATA.mkdir(exist_ok=True)
-    OUT.write_text(json.dumps(confirmada, ensure_ascii=False, indent=1),
-                   encoding="utf-8")
+    OUT.write_text(json.dumps(dict(sorted(confirmada.items())),
+                              ensure_ascii=False, indent=1), encoding="utf-8")
+    if novos:
+        print(f"limites NOVOS neste import: {', '.join(novos)}")
+    print(f"limites conhecidos ao todo: {len(confirmada)} -> "
+          f"{json.dumps(dict(sorted(confirmada.items())))}\n")
     print(f"{OUT.name}: {len(cota)} pares (tipo de dispositivo, Signal Type)\n")
     print(f"{'par':<28}{'cota':>6}   evidencia")
     for k, v in sorted(cota.items(), key=lambda x: -x[1]):
