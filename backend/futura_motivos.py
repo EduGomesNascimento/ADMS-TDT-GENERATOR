@@ -46,6 +46,8 @@ ACAO = {
 def categoria(motivo: str | None, dm: str, renomear: set) -> str:
     if motivo is None:
         return "A" if dm in renomear else "Z"
+    if "ja tem esse papel" in motivo or "ja tem um sinal" in motivo:
+        return "D"
     if "nao tem equivalente" in motivo:
         return "B"
     if "nao carrega sinal" in motivo:
@@ -114,11 +116,27 @@ def main():
                                         .iter_rows(values_only=True))[1:] if r[0]}
     wr.close()
 
+    # Nem todo sinal da FUTURA passa pela aba 19: os barrados por PAPEL ja
+    # ocupado (a funcao ANSI daquele rele, a grandeza+fase daquele TP) tem
+    # dispositivo valido e nunca entraram na lista de "sem dispositivo".
+    # Sem este fallback eles apareciam como "A conferir" — 73 de 267.
+    import casca_devmap as _dv
+    _ids = _dv.modelo_new()[0]
     for s in sinais:
         m = motivo.get(s["nome"])
         s["cat"] = categoria(m, s["dm"], renomear)
         s["motivo"] = m or ("o dispositivo existe no modelo mas ainda sem _NEW"
                             if s["cat"] == "A" else "")
+        if s["cat"] == "Z":
+            if s["dm"] in _ids:
+                s["cat"] = "D"
+                s["motivo"] = (f"{s['dm']} EXISTE, mas o papel deste sinal ja "
+                               f"esta ocupado nele (a funcao ANSI, ou a "
+                               f"grandeza+fase). Precisa do estagio/dispositivo "
+                               f"proprio da funcao.")
+            else:
+                s["cat"] = "C"
+                s["motivo"] = f"{s['dm']} nao existe no modelo — precisa ser criado"
 
     # 3) planilha
     wb = openpyxl.Workbook()

@@ -103,6 +103,13 @@ MODELO_NEW = Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CAS.xml")
 # Um vao que aparece no parcial tem os dispositivos daquele TIPO substituidos —
 # assim as seccionadoras velhas (89-102, 89-110) somem de verdade.
 MODELO_DELTA = [Path("C:/Users/egnpo/Downloads/PT-MOD-SE-NOVO-CAS.xml")]
+# IDs que o retorno do ADMS provou NAO existir mais ("Could not find any device
+# that corresponds to..."). O export completo e de antes da renomeacao, entao
+# eles ainda aparecem la; sem tirar daqui o gerador volta a aponta-los.
+SUMIRAM = {
+    "CAS_LTSCO_89-102_SEC_NEW",   # virou 89-14 / 89-16 / 89-18
+    "CAS_LTPRI_89-110_SEC_NEW",   # virou 89-8 / 89-10 / 89-12
+}
 TDT_ATUAL = Path("C:/Users/egnpo/Downloads/CASCA.xlsx")
 PROP_SCADA_ID = "1224979098644840199"
 HEADER_ROWS = 4
@@ -502,13 +509,13 @@ def modelo_new():
                 continue
             txt = dp.read_text(encoding="utf-8-sig", errors="replace")
             novos = re.findall(rf'id="{PROP_SCADA_ID}" value="([^"]+)"', txt)
-            # (vao, tipo) que o parcial redefine — o que era desse par no
-            # completo e DESCARTADO, senao a seccionadora renomeada continua
-            # existindo com o ID velho e o gerador segue apontando pra ela.
-            redef = {(_vao_suf(n)[0], _vao_suf(n)[1]) for n in novos}
-            for k in [k for k in por
-                      if (_vao_suf(k)[0], _vao_suf(k)[1]) in redef]:
-                del por[k]
+            # NAO descartar por (vao, tipo): um vao tem VARIAS seccionadoras e
+            # o parcial redefine so algumas. Descartar a classe inteira apagava
+            # a CAS_LTSCO_29-1_SEC_NEW (a SECG, que ninguem renomeou) junto com
+            # as 89-xx — e 16 sinais caiam para a FUTURA sem motivo.
+            # So somem os IDs que o ADMS JA PROVOU nao existir mais.
+            for morto in SUMIRAM:
+                por.pop(morto, None)
             for n in novos:
                 por[n] += 1
         _CACHE["modelo_new"] = (set(por), {k for k, v in por.items() if v > 1})
@@ -516,11 +523,23 @@ def modelo_new():
 
 
 def _vao_suf(dm: str) -> tuple[str, str]:
-    """'CAS_LTKVM_52-1_DJ_NEW' -> ('LTKVM', 'DJ_NEW'); o device fica de fora."""
+    """'CAS_LTKVM_52-1_DJ_NEW' -> ('LTKVM', 'DJ'); o device e o _NEW ficam fora.
+
+    O SUFIXO E NORMALIZADO SEM O '_NEW'. O modelo mistura as duas formas: os
+    dispositivos renomeados em 28/07 levam '_NEW' (CAS_LTSCO_LTSCO_P_PROT_51F_NEW)
+    e os estagios criados em 30/07 nao levam (CAS_AL12_AL12_PROT_50F1). O
+    usuario confirmou que fica assim — "os antigos continuam como estavam, mas
+    os novos sao esses, utilize eles na TDT". Normalizar aqui faz os dois
+    formatos casarem pelo mesmo par (vao, sufixo), e o valor guardado no indice
+    e o ID EXATO, que e o que vai para a coluna Device Mapping.
+    """
     p = dm.split("_")
     if len(p) < 4:
         return (p[1] if len(p) > 1 else "", "")
-    return p[1], "_".join(p[3:])
+    suf = "_".join(p[3:])
+    if suf.endswith("_NEW"):
+        suf = suf[:-4]
+    return p[1], suf
 
 
 def indice_modelo():
@@ -588,7 +607,12 @@ def no_modelo(dm_com_sufixo: str) -> tuple[str | None, str]:
     if (v, s) in por and por[(v, s)] == dm_com_sufixo:
         return dm_com_sufixo, ""
     if (v, s) in por:
-        return por[(v, s)], f"equipamento renumerado no modelo"
+        real = por[(v, s)]
+        # o ID do modelo pode nao ter o '_NEW' que o gerador acrescenta
+        nota = ("equipamento renumerado no modelo"
+                if real.replace("_NEW", "") != dm_com_sufixo.replace("_NEW", "")
+                else "ID do modelo sem o sufixo _NEW")
+        return real, nota
     for outro in alias.get(v, []):
         if (outro, s) in por:
             return por[(outro, s)], f"vao {v} esta como {outro} no modelo"
@@ -610,17 +634,34 @@ def so_no_modelo(nome: str, sigla: str, sufixo_id: str = "_NEW"):
     equiv = MODULO_EQUIV.get(mod)
     alvo = equiv[0] if equiv else mod
     suf, _o = sufixo(sigla, dev)
+    # O indice e chaveado pelo sufixo NORMALIZADO (sem _NEW) — ver _vao_suf.
+    # Consultar com "{suf}_NEW" nunca casava, e o AL12 (com 9 estagios) era
+    # reportado como "vao nao existe". Foi o que fez os estagios criados em
+    # 30/07 nao serem usados.
     for vao in [alvo] + list(alias.get(alvo, [])):
-        for s in (f"{suf}{sufixo_id}",):
-            if (vao, s) in por:
-                dm = por[(vao, s)]
-                base = dm[:-len(sufixo_id)] if dm.endswith(sufixo_id) else dm
-                return base, f"so no modelo novo [{mod}->{vao}]"
+        if (vao, suf) in por:
+            dm = por[(vao, suf)]
+            base = dm[:-len(sufixo_id)] if dm.endswith(sufixo_id) else dm
+            return base, f"so no modelo novo [{mod}->{vao}]"
         # rebaixa dentro do vao, so com o que o modelo tem
         do_vao = {k[1]: v for k, v in por.items() if k[0] == vao}
+        # SINAL DE PROTECAO NAO CAI EM SECCIONADORA. Sem isto o
+        # CAS_TR1AT_TR1AT_P_51F (que nao tem estagio proprio) ia parar na
+        # CAS_TR1AT_89-12_SEC, porque o _ULTIMO_RECURSO tenta SEC. A regra do
+        # usuario e outra: estagio proprio -> P_PROT/A_PROT -> PROT.
+        if suf.startswith(("PROT", "P_PROT", "A_PROT")):
+            _pref = suf.split("_PROT", 1)[0] if suf[:2] in ("P_", "A_") else ""
+            cadeia = ([f"{_pref}_PROT"] if _pref else []) + ["PROT"]
+            for alt in cadeia:
+                if alt in do_vao:
+                    dm = do_vao[alt]
+                    base = dm[:-len(sufixo_id)] if dm.endswith(sufixo_id) else dm
+                    return base, (f"so no modelo novo, rele generico {alt} "
+                                  f"[{mod}->{vao}]")
+            continue
         for alt in _DEGRADA.get(suf, ()) + _ULTIMO_RECURSO:
-            if f"{alt}{sufixo_id}" in do_vao:
-                dm = do_vao[f"{alt}{sufixo_id}"]
+            if alt in do_vao:
+                dm = do_vao[alt]
                 base = dm[:-len(sufixo_id)] if dm.endswith(sufixo_id) else dm
                 return base, f"so no modelo novo, fallback {alt} [{mod}->{vao}]"
     return None, f"vao {alvo} nao existe nem no modelo novo"
@@ -786,8 +827,10 @@ def rele_generico_do_vao(mod: str, prefixo: str = "",
         for suf in tentar:
             # exato: CAS_<vao>_<device>_<suf> — o device nao pode ter '_'
             hit = [i for i in ids
-                   if i.startswith(pre) and i.endswith(f"_{suf}{sufixo}")
-                   and i[len(pre):].rsplit(f"_{suf}{sufixo}", 1)[0].count("_") == 0]
+                   if i.startswith(pre)
+                   and i.replace(sufixo, "").endswith(f"_{suf}")
+                   and i.replace(sufixo, "")[len(pre):]
+                        .rsplit(f"_{suf}", 1)[0].count("_") == 0]
             if hit:
                 nota = f"rele generico {suf} do vao {v}"
                 if prefixo and suf == "PROT":
@@ -804,9 +847,10 @@ def tp_do_vao(mod: str, sufixo: str = "") -> tuple[str | None, str]:
     barra = TP_DO_VAO.get(alvo)
     if not barra:
         return None, ""
-    alvo_id = f"CAS_{barra}_{barra}_TP{sufixo}"
-    if alvo_id in ids:
-        return alvo_id, f"o {alvo} nao tem TP proprio — le o TP da barra {barra}"
+    for alvo_id in (f"CAS_{barra}_{barra}_TP{sufixo}", f"CAS_{barra}_{barra}_TP"):
+        if alvo_id in ids:
+            return alvo_id, (f"o {alvo} nao tem TP proprio — le o TP da "
+                             f"barra {barra}")
     return None, f"a barra {barra} nao tem TP no modelo"
 
 

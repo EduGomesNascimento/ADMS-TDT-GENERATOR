@@ -43,6 +43,10 @@ OUT_FUTURA = Path("C:/Users/egnpo/Downloads/TDT_CASCA_FUTURA.xlsx")
 # DISJUNTOR do vao. Decisao do usuario (28/07/2026): "se nao tem rele pra
 # receber, deve ser alocado no disjuntor" — mantendo o Signal Type original.
 OUT_COMPLETA = Path("C:/Users/egnpo/Downloads/TDT_CASCA_ATUAL_COMPLETA.xlsx")
+# TODOS os sinais num arquivo so: os que mapeiam hoje (com a realocacao da
+# COMPLETA) MAIS os que ainda esperam dispositivo, estes com o nome CANONICO
+# do que precisa ser criado. E a TDT inteira, sem recorte.
+OUT_TUDO = Path("C:/Users/egnpo/Downloads/CAS_TDT_COMPLETA.xlsx")
 C_NO_DISJUNTOR = True
 SPLIT_TDT = True
 PULAR_LISTA = False        # --rapido: nao regrava a lista corrigida
@@ -1418,7 +1422,8 @@ def main():
              ("DNP3_DiscreteAnalog", "A/D")]
     gerados = defaultdict(int); pulados = []; usou_fallback = []
     # linhas separadas por situacao do dispositivo, para gerar as 2 TDTs
-    split_rows = defaultdict(lambda: {"atual": [], "futura": [], "completa": []})
+    split_rows = defaultdict(
+        lambda: {"atual": [], "futura": [], "completa": [], "tudo": []})
     dm_rows = []; dm_origem = Counter(); dm_pendentes = []
     # O Casca_Obra é CÓPIA da CASCA: os dispositivos clonados herdaram o MESMO
     # "ID de Mapeamento SCADA" dos originais, então o ADMS acha DOIS candidatos
@@ -1785,7 +1790,15 @@ def main():
             # o dispositivo do Cas_Obra leva o sufixo do ID (ver DM_SUFIXO).
             # O sinal que caiu na UTR NAO recebe sufixo: UTR_CAS_3 e o nome da
             # UTR, nao de um dispositivo renomeado.
+            # O ID do modelo manda: uns levam _NEW (renomeados em 28/07) e
+            # outros nao (estagios criados em 30/07). Reconstruir o nome e
+            # colar _NEW escrevia um ID que nao existe. Aqui vale o texto
+            # EXATO do modelo quando ele existe.
             dm = dm_base if na_utr else f"{dm_base}{DM_SUFIXO}"
+            if not na_utr:
+                _ids = devmap.modelo_new()[0]
+                if dm not in _ids and dm_base in _ids:
+                    dm = dm_base                 # o modelo nao usa _NEW aqui
             put("Device Mapping", dm)
             put("Substation", cont_nome)
             nd = devmap.nome_do_dispositivo(dm_base)
@@ -1842,14 +1855,17 @@ def main():
                         if c and c - 1 < len(ref):
                             row[c - 1] = ref[c - 1]
             rows.append(row)
+            _na_tudo = False
             _existe = (f"{dm_base}{DM_SUFIXO}" in devmap.modelo_new()[0]
                        and not forca_futura)
             split_rows[sheet]["atual" if _existe else "futura"].append(row)
+            _na_tudo = _existe
             # ── ATUAL_COMPLETA ──────────────────────────────────────────────
             # o que ja tem dispositivo entra igual; o que so tinha o rele
             # inexistente entra com o Device Mapping trocado pelo DISJUNTOR.
             if _existe:
                 split_rows[sheet]["completa"].append(row)
+                split_rows[sheet]["tudo"].append(row)
             elif dm_dj:
                 alt = list(row)
                 _cdm = L("Device Mapping")
@@ -1859,8 +1875,14 @@ def main():
                 if _cdv:
                     alt[_cdv - 1] = devmap.nome_do_dispositivo(dm_dj) or None
                 split_rows[sheet]["completa"].append(alt)
+                split_rows[sheet]["tudo"].append(alt)
+                _na_tudo = True
                 realoc_dj.append([p["sheet"], p["linha"], p["tipo"], p["sigla"],
                                   nome, _st, dm, dm_dj, dm_dj_nota, dm_o])
+            # CAS_TDT_COMPLETA leva TODOS: quem nao coube em dispositivo real
+            # entra com o nome CANONICO — o do dispositivo que precisa existir.
+            if not _na_tudo:
+                split_rows[sheet]["tudo"].append(row)
         for i, row in enumerate(rows):
             for c in range(ncol):
                 cell = ws.cell(HEADER_ROWS + 1 + i, c + 1, value=row[c])
@@ -1969,7 +1991,8 @@ def main():
     #   FUTURA  -> Device Mapping que ainda PRECISA ser criado; o erro do import
     #              e a propria lista do que fazer (ver abas 19 e 23)
     if SPLIT_TDT:
-        _saidas = [("atual", OUT_ATUAL), ("futura", OUT_FUTURA)]
+        _saidas = [("atual", OUT_ATUAL), ("futura", OUT_FUTURA),
+                   ("tudo", OUT_TUDO)]
         if C_NO_DISJUNTOR:
             _saidas.append(("completa", OUT_COMPLETA))
         for qual, nome_arq in _saidas:
