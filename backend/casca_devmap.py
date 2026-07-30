@@ -60,12 +60,24 @@ REAPROVEITAR_DISPOSITIVO_ANTIGO = True
 # Módulo que não está nesta tabela e não existe no modelo fica PENDENTE.
 MODULO_EQUIV = {
     # ── linhas 138 kV: a chave de aterramento (SECG 29-x) manteve o número ──
-    "LT1": ("LTSCO", "ALTA",
-            "SECG 29-1 na lista = 29-01 do LT SCO no unifilar"),
+    # CORRIGIDO em 30/07/2026. Antes: LT1->LTSCO e LT3->LTMRU, deduzido da
+    # chave de aterramento ("29-1 da lista = 29-01 do LT SCO"). ERRADO — o
+    # unifilar mostra que as tres linhas repetem a mesma estrutura e a lista
+    # usa os MESMOS numeros de equipamento do unifilar:
+    #     LISTA                          UNIFILAR
+    #     LT1  52-1  · 89-2  89-4  89-6    KVM  52-01 · 89-02 89-04 89-06
+    #     LT2  52-2  · 89-8  89-10 89-12   PRI  52-02 · 89-08 89-10 89-12
+    #     LT3  52-3  · 89-14 89-16 89-18   SCO  52-03 · 89-14 89-16 89-18
+    # "LT1 e KVM pois usa o DJ 52-1" (usuario). O disjuntor e evidencia mais
+    # forte que a 29-xx: o modelo tem CAS_LTKVM_52-1_DJ_NEW, e a lista da
+    # 52-1 ao LT1. Era o que fazia a seccionadora do LT1 ser procurada no
+    # LTSCO (que tem 89-14/16/18) e dar "Could not find any".
+    "LT1": ("LTKVM", "ALTA",
+            "DJ 52-1 na lista = 52-01 do LT KVM no unifilar"),
     "LT2": ("LTPRI", "ALTA",
-            "SECG 29-3 na lista = 29-03 do LT PRI no unifilar"),
-    "LT3": ("LTMRU", "ALTA",
-            "SECG 29-5 na lista = 29-05 do LT KVM (LTMRU no modelo)"),
+            "DJ 52-2 e SECs 89-8/10/12 = 52-02 e 89-08/10/12 do LT PRI"),
+    "LT3": ("LTSCO", "ALTA",
+            "DJ 52-3 e SECs 89-14/16/18 = 52-03 e 89-14/16/18 do LT SCO"),
     # ── transformadores: aba 'TR 1' = modulo 6, aba 'TR 2' = modulo 7 ──
     "TR6":   ("TR1",   "MEDIA", "aba 'TR 1' da lista -> TR1 do unifilar"),
     "TR6AT": ("TR1AT", "MEDIA", "lado AT do TR1"),
@@ -109,6 +121,28 @@ MODELO_DELTA = [Path("C:/Users/egnpo/Downloads/PT-MOD-SE-NOVO-CAS.xml")]
 SUMIRAM = {
     "CAS_LTSCO_89-102_SEC_NEW",   # virou 89-14 / 89-16 / 89-18
     "CAS_LTPRI_89-110_SEC_NEW",   # virou 89-8 / 89-10 / 89-12
+    "CAS_LTSCO_89-104_SEC_NEW",   # idem (acusado no import ERRONEO)
+}
+
+# ── seccionadora: de-para EXPLICITO lista -> ID do modelo ────────────────────
+# Os numeros da lista batem com os do unifilar, mas o PREFIXO do ID no modelo
+# nem sempre acompanha o vao: as seccionadoras do LT KVM (89-02/04/06) foram
+# criadas com ID 'CAS_LTPRI_...' — confirmado pelo usuario em 30/07 ("89-02,
+# 89-04 e 89-06 KVM"). O ID e uma CHAVE, nao uma descricao: o sinal do KVM
+# aponta para esse texto mesmo.
+# Sem esta tabela o resolvedor cai no par (vao, 'SEC'), que tem varios
+# candidatos, e escolhe por ordem de leitura — ou seja, no chute.
+SEC_DE_PARA = {
+    # vao do MODELO, equipamento da LISTA -> ID exato
+    ("LTKVM", "89-2"):  "CAS_LTPRI_89-2_SEC_NEW",
+    ("LTKVM", "89-4"):  "CAS_LTPRI_89-4_SEC_NEW",
+    ("LTKVM", "89-6"):  "CAS_LTPRI_89-6_SEC_NEW",
+    ("LTPRI", "89-8"):  "CAS_LTPRI_89-8_SEC_NEW",
+    ("LTPRI", "89-10"): "CAS_LTPRI_89-10_SEC_NEW",
+    ("LTPRI", "89-12"): "CAS_LTPRI_89-12_SEC_NEW",
+    ("LTSCO", "89-14"): "CAS_LTSCO_89-14_SEC_NEW",
+    ("LTSCO", "89-16"): "CAS_LTSCO_89-16_SEC_NEW",
+    ("LTSCO", "89-18"): "CAS_LTSCO_89-18_SEC_NEW",
 }
 TDT_ATUAL = Path("C:/Users/egnpo/Downloads/CASCA.xlsx")
 PROP_SCADA_ID = "1224979098644840199"
@@ -633,6 +667,11 @@ def so_no_modelo(nome: str, sigla: str, sufixo_id: str = "_NEW"):
     dev = p[2] if len(p) > 2 else mod
     equiv = MODULO_EQUIV.get(mod)
     alvo = equiv[0] if equiv else mod
+    # de-para explicito da seccionadora vence tudo (ver SEC_DE_PARA)
+    _sec = SEC_DE_PARA.get((alvo, dev))
+    if _sec:
+        base = _sec[:-len(sufixo_id)] if _sec.endswith(sufixo_id) else _sec
+        return base, f"seccionadora pelo de-para explicito [{mod}->{alvo}]"
     suf, _o = sufixo(sigla, dev)
     # O indice e chaveado pelo sufixo NORMALIZADO (sem _NEW) — ver _vao_suf.
     # Consultar com "{suf}_NEW" nunca casava, e o AL12 (com 9 estagios) era
