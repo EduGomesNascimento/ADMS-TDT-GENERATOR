@@ -96,6 +96,13 @@ MODELO = Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CASCA.xml")
 # Export do modelo DEPOIS de o usuario renomear os dispositivos com _NEW.
 # Usado so para CONFERIR (aba 21 do relatorio) — nao alimenta a resolucao.
 MODELO_NEW = Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CAS.xml")
+# Exports PARCIAIS, aplicados POR CIMA do completo. O ADMS exporta so o que
+# mudou no changeset: o de 30/07 traz 61 IDs (as seccionadoras renomeadas das
+# LTs e do TR12AT + os estagios P_PROT/A_PROT criados nas tres linhas). Trocar
+# MODELO_NEW por ele perderia os outros 353 dispositivos; por isso e overlay.
+# Um vao que aparece no parcial tem os dispositivos daquele TIPO substituidos —
+# assim as seccionadoras velhas (89-102, 89-110) somem de verdade.
+MODELO_DELTA = [Path("C:/Users/egnpo/Downloads/PT-MOD-SE-NOVO-CAS.xml")]
 TDT_ATUAL = Path("C:/Users/egnpo/Downloads/CASCA.xlsx")
 PROP_SCADA_ID = "1224979098644840199"
 HEADER_ROWS = 4
@@ -489,6 +496,21 @@ def modelo_new():
             txt = MODELO_NEW.read_text(encoding="utf-8-sig", errors="replace")
             for m in re.findall(rf'id="{PROP_SCADA_ID}" value="([^"]+)"', txt):
                 por[m] += 1
+        # ── overlay dos exports parciais ──
+        for dp in MODELO_DELTA:
+            if not dp.exists():
+                continue
+            txt = dp.read_text(encoding="utf-8-sig", errors="replace")
+            novos = re.findall(rf'id="{PROP_SCADA_ID}" value="([^"]+)"', txt)
+            # (vao, tipo) que o parcial redefine — o que era desse par no
+            # completo e DESCARTADO, senao a seccionadora renomeada continua
+            # existindo com o ID velho e o gerador segue apontando pra ela.
+            redef = {(_vao_suf(n)[0], _vao_suf(n)[1]) for n in novos}
+            for k in [k for k in por
+                      if (_vao_suf(k)[0], _vao_suf(k)[1]) in redef]:
+                del por[k]
+            for n in novos:
+                por[n] += 1
         _CACHE["modelo_new"] = (set(por), {k for k, v in por.items() if v > 1})
     return _CACHE["modelo_new"]
 
