@@ -122,6 +122,11 @@ SUMIRAM = {
     "CAS_LTSCO_89-102_SEC_NEW",   # virou 89-14 / 89-16 / 89-18
     "CAS_LTPRI_89-110_SEC_NEW",   # virou 89-8 / 89-10 / 89-12
     "CAS_LTSCO_89-104_SEC_NEW",   # idem (acusado no import ERRONEO)
+    "CAS_LTSCO_89-100_SEC_NEW",   # idem (acusado no import 'teste')
+    # renomeadas para o prefixo LTKVM — o export completo ainda tem as velhas
+    "CAS_LTPRI_89-2_SEC_NEW",
+    "CAS_LTPRI_89-4_SEC_NEW",
+    "CAS_LTPRI_89-6_SEC_NEW",
 }
 
 # ── seccionadora: de-para EXPLICITO lista -> ID do modelo ────────────────────
@@ -134,9 +139,16 @@ SUMIRAM = {
 # candidatos, e escolhe por ordem de leitura — ou seja, no chute.
 SEC_DE_PARA = {
     # vao do MODELO, equipamento da LISTA -> ID exato
-    ("LTKVM", "89-2"):  "CAS_LTPRI_89-2_SEC_NEW",
-    ("LTKVM", "89-4"):  "CAS_LTPRI_89-4_SEC_NEW",
-    ("LTKVM", "89-6"):  "CAS_LTPRI_89-6_SEC_NEW",
+    # chave de aterramento (SECG) — o KVM usa a 29-1, confirmado pelo usuario.
+    # Sem estas tres a SECG caia no par (vao,'SEC') e a escolha saia por ordem
+    # de leitura: a do KVM ia parar na CAS_LTMRU_29-7_SEC_NEW.
+    ("LTKVM", "29-1"):  "CAS_LTKVM_29-1_SEC_NEW",
+    ("LTPRI", "29-3"):  "CAS_LTPRI_29-3_SEC_NEW",
+    ("LTSCO", "29-5"):  "CAS_LTSCO_29-5_SEC_NEW",
+    # o usuario corrigiu o prefixo: agora sao CAS_LTKVM_*, nao CAS_LTPRI_*
+    ("LTKVM", "89-2"):  "CAS_LTKVM_89-2_SEC_NEW",
+    ("LTKVM", "89-4"):  "CAS_LTKVM_89-4_SEC_NEW",
+    ("LTKVM", "89-6"):  "CAS_LTKVM_89-6_SEC_NEW",
     ("LTPRI", "89-8"):  "CAS_LTPRI_89-8_SEC_NEW",
     ("LTPRI", "89-10"): "CAS_LTPRI_89-10_SEC_NEW",
     ("LTPRI", "89-12"): "CAS_LTPRI_89-12_SEC_NEW",

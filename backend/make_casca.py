@@ -1621,6 +1621,19 @@ def main():
                         dm_base = _real[:-len(DM_SUFIXO)] if _real.endswith(DM_SUFIXO) else _real
                         if _nota:
                             dm_o = f"{dm_o} + {_nota}"
+                # SECCIONADORA: o de-para explicito vence QUALQUER resolucao
+                # anterior. O caminho principal (resolver_estrito + no_modelo)
+                # casa por (vao, tipo), e um vao tem TRES seccionadoras — a
+                # escolha saia por ordem de leitura, mandando o 89-2 para o
+                # 89-6 e o 89-4 para uma chave do LTMRU. Ver SEC_DE_PARA.
+                _vm = devmap.MODULO_EQUIV.get(mod)
+                _vm = _vm[0] if _vm else mod
+                _sec_fix = devmap.SEC_DE_PARA.get((_vm, dev))
+                if _sec_fix:
+                    dm_base = (_sec_fix[:-len(DM_SUFIXO)]
+                               if DM_SUFIXO and _sec_fix.endswith(DM_SUFIXO)
+                               else _sec_fix)
+                    dm_o = f"seccionadora pelo de-para explicito [{mod}->{_vm}]"
                 # o dispositivo aceita esse Signal Type?
                 if dm_base is not None:
                     _cb, _por = _cabe(f"{dm_base}{DM_SUFIXO}", _st, _g("Measurement Type"))
