@@ -114,7 +114,12 @@ MODELO_NEW = Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CAS.xml")
 # MODELO_NEW por ele perderia os outros 353 dispositivos; por isso e overlay.
 # Um vao que aparece no parcial tem os dispositivos daquele TIPO substituidos —
 # assim as seccionadoras velhas (89-102, 89-110) somem de verdade.
-MODELO_DELTA = [Path("C:/Users/egnpo/Downloads/PT-MOD-SE-NOVO-CAS.xml")]
+MODELO_DELTA = [Path("C:/Users/egnpo/Downloads/PT-MOD-SE-NOVO-CAS.xml"),
+                # 03/08: mais 21 estagios (21Z1 e 67FT no principal e no
+                # alternado das tres linhas, 62BF no LTKVM/LTSCO, 50F nos
+                # cinco alimentadores e no TRF1, 67F no TRF1) + a
+                # CAS_LTKVM_29-1_SEC_NEW
+                Path("C:/Users/egnpo/Downloads/PT-MOD-SE-CAS-SINAIS.xml")]
 # IDs que o retorno do ADMS provou NAO existir mais ("Could not find any device
 # that corresponds to..."). O export completo e de antes da renomeacao, entao
 # eles ainda aparecem la; sem tirar daqui o gerador volta a aponta-los.

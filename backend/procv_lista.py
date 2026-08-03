@@ -135,6 +135,11 @@ def main(tdt_path: str, csv_path: str):
         dm, aba_tdt = tdt.get(nome_adms, ("", ""))
         entrou, msg = ret.get(nome_adms, (None, ""))
 
+        # QUEM ESTA NA UTR: o sinal cujo mapeamento FALHOU. A TDT nunca
+        # escreve "UTR_CAS_3" no Device Mapping — ela escreve o dispositivo
+        # que DEVERIA existir; o ADMS e que, nao achando, pendura o sinal
+        # direto na UTR_CAS_3. Entao "na UTR" == "falhou no import", e e o
+        # que a arvore mostra em verde sob a UTR.
         if not p["usado"]:
             sit, acao = "Utilizado? = NAO", "nada — nao entra na TDT por decisao da lista"
         elif p["tipo"] == "C":
@@ -145,12 +150,12 @@ def main(tdt_path: str, csv_path: str):
             sit, acao = "OK — no ADMS", ""
         elif entrou is False:
             if "Could not find" in msg:
-                sit, acao = "FALTA O DISPOSITIVO", f"CRIAR no ADMS: {dm}"
+                sit, acao = "NA UTR — falta o dispositivo", f"CRIAR no ADMS: {dm}"
             elif "Found multiple" in msg:
-                sit, acao = "ID DUPLICADO", f"dar ID proprio ao 2o dispositivo com {dm}"
+                sit, acao = "NA UTR — ID duplicado", f"dar ID proprio ao 2o dispositivo com {dm}"
             elif "already mapped" in msg:
                 sig = "_".join(nome_adms.split("_")[3:])
-                sit, acao = "PAPEL OCUPADO", f"CRIAR o estagio da funcao: {dm}_{sig}"
+                sit, acao = "NA UTR — falta o estagio", f"CRIAR o estagio da funcao: {dm}_{sig}"
             else:
                 sit, acao = "FALHOU", msg[:90]
         else:
@@ -164,8 +169,10 @@ def main(tdt_path: str, csv_path: str):
     wb = openpyxl.Workbook()
     hf = Font(bold=True, color="FFFFFF")
     hfill = PatternFill("solid", fgColor="1F4E78")
-    cor = {"OK — no ADMS": "C6EFCE", "FALTA O DISPOSITIVO": "FFC7CE",
-           "PAPEL OCUPADO": "FFEB9C", "ID DUPLICADO": "BDD7EE",
+    cor = {"OK — no ADMS": "C6EFCE",
+           "NA UTR — falta o dispositivo": "FFC7CE",
+           "NA UTR — falta o estagio": "FFEB9C",
+           "NA UTR — ID duplicado": "BDD7EE",
            "Utilizado? = NAO": "F2F2F2", "COMANDO": "F2F2F2",
            "FORA DA TDT": "FFC7CE", "FALHOU": "FFC7CE"}
 
