@@ -144,7 +144,10 @@ SEC_DE_PARA = {
     # de leitura: a do KVM ia parar na CAS_LTMRU_29-7_SEC_NEW.
     ("LTKVM", "29-1"):  "CAS_LTKVM_29-1_SEC_NEW",
     ("LTPRI", "29-3"):  "CAS_LTPRI_29-3_SEC_NEW",
-    ("LTSCO", "29-5"):  "CAS_LTSCO_29-5_SEC_NEW",
+    # o changeset PT-MOD-SE-CAS-SINAIS mostra o sinal CAS_LTSCO_29-5_SECG
+    # com SIGNAL_DEVICEMAPPING = CAS_LTSCO_29-1_SEC_NEW. Eu tinha inferido
+    # "29-5" por simetria com o numero da lista — errado.
+    ("LTSCO", "29-5"):  "CAS_LTSCO_29-1_SEC_NEW",
     # o usuario corrigiu o prefixo: agora sao CAS_LTKVM_*, nao CAS_LTPRI_*
     ("LTKVM", "89-2"):  "CAS_LTKVM_89-2_SEC_NEW",
     ("LTKVM", "89-4"):  "CAS_LTKVM_89-4_SEC_NEW",
